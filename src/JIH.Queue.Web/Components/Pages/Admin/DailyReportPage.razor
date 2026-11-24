@@ -1,0 +1,45 @@
+@page "/admin/reports/{Id:int}"
+@attribute [Authorize(Roles = "Admin")]
+@inject Loc L
+@inject ReportService ReportsSvc
+
+<PageTitle>@L["rep.dailyReport"]</PageTitle>
+@if (_report is null)
+{
+    <div class="panel empty">@L["err.notFound"]</div>
+}
+else
+{
+    <div class="page-head">
+        <div>
+            <h1>@L["rep.dailyReport"] – <span class="tnum">@_report.ServiceDate.ToString("yyyy-MM-dd dddd")</span></h1>
+            <div class="small muted">@L["rep.generatedAt"] <span class="tnum">@_report.GeneratedAt.ToString("yyyy-MM-dd HH:mm")</span> · @L["rep.by"] @_report.GeneratedBy · @L.Enum(_report.Trigger)</div>
+        </div>
+        <div class="row">
+            <a class="btn" href="/admin/export/daily/@(_report.Id).csv?lang=@L.Lang" data-enhance-nav="false" download>@L["rep.exportCsv"]</a>
+            <button class="btn" onclick="window.print()">@L["common.print"]</button>
+            <a class="btn btn-ghost" href="/admin/reports">@L["common.back"]</a>
+        </div>
+    </div>
+    <ReportView Summary="_summary" Extras="_extras" />
+}
+@code {
+    [Parameter] public int Id { get; set; }
+    private DailyReport? _report;
+    private ReportSummary? _summary;
+    private IReadOnlyList<(string, string)> _extras = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _report = await ReportsSvc.GetDailyReportAsync(Id);
+        if (_report is null) return;
+        _summary = ReportService.ParseDetails(_report);
+        _extras =
+        [
+            (L["rep.transferred"], _report.Transferred.ToString()),
+            (L["rep.notSeen"], _report.NotSeen.ToString()),
+            ($"{L["rep.notifications"]} ({L["rep.notifSent"]} / {L["rep.notifFailed"]})", $"{_report.NotificationsSent} / {_report.NotificationsFailed}"),
+            (L["rep.auditEvents"], _report.AuditEventCount.ToString())
+        ];
+    }
+}

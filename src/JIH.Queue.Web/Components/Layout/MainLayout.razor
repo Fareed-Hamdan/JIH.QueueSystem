@@ -1,0 +1,74 @@
+@inherits LayoutComponentBase
+@inject Loc L
+@inject SettingsService Settings
+@inject NavigationManager Nav
+
+<div class="dummy-ribbon">@L["common.dummyData"]</div>
+<header class="topbar">
+    <div class="topbar-inner">
+        <a class="brand" href="/">
+            <BrandMark />
+            <span>
+                <span class="brand-name">@_hospital</span><br />
+                <span class="brand-sub">@L["app.title"]</span>
+            </span>
+        </a>
+        <AuthorizeView>
+            <Authorized>
+                <nav class="mainnav" aria-label="main">
+                    @if (context.User.IsInRole("Receptionist") || context.User.IsInRole("Admin"))
+                    {
+                        <NavLink href="/reception">@L["nav.reception"]</NavLink>
+                    }
+                    @if (context.User.IsInRole("Doctor") || context.User.IsInRole("Nurse") || context.User.IsInRole("Admin"))
+                    {
+                        <NavLink href="/doctor">@L["nav.doctor"]</NavLink>
+                    }
+                    <NavLink href="/display">@L["nav.displays"]</NavLink>
+                    @if (context.User.IsInRole("Admin"))
+                    {
+                        <NavLink href="/admin" Match="NavLinkMatch.Prefix">@L["nav.admin"]</NavLink>
+                    }
+                </nav>
+                <div class="topbar-end">
+                    <span>@(context.User.FindFirst("display_name")?.Value)</span>
+                    <LangSwitch />
+                    <a href="/account/logout" data-enhance-nav="false">@L["nav.logout"]</a>
+                </div>
+            </Authorized>
+            <NotAuthorized>
+                <div class="topbar-end"><LangSwitch /></div>
+            </NotAuthorized>
+        </AuthorizeView>
+    </div>
+</header>
+@if (Nav.ToBaseRelativePath(Nav.Uri).StartsWith("admin"))
+{
+    <nav class="subnav" aria-label="admin">
+        <div class="subnav-inner">
+            <NavLink href="/admin" Match="NavLinkMatch.All">@L["adm.title"]</NavLink>
+            <NavLink href="/admin/clinics">@L["nav.clinics"]</NavLink>
+            <NavLink href="/admin/doctors">@L["nav.doctors"]</NavLink>
+            <NavLink href="/admin/assignments">@L["nav.assignments"]</NavLink>
+            <NavLink href="/admin/users">@L["nav.users"]</NavLink>
+            <NavLink href="/admin/displays">@L["nav.displays"]</NavLink>
+            <NavLink href="/admin/reports">@L["nav.reports"]</NavLink>
+            <NavLink href="/admin/audit">@L["nav.audit"]</NavLink>
+            <NavLink href="/admin/settings">@L["nav.settings"]</NavLink>
+        </div>
+    </nav>
+}
+<main class="page">
+    @Body
+</main>
+
+<div id="blazor-error-ui" data-nosnippet>
+    @L["err.unexpected"]
+    <a href="." class="reload">↻</a>
+    <span class="dismiss">✕</span>
+</div>
+
+@code {
+    private string _hospital = "";
+    protected override async Task OnInitializedAsync() => _hospital = (await Settings.GetAsync()).HospitalName(L.IsArabic);
+}

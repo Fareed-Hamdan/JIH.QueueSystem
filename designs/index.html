@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jordan Islamic Hospital – Queue System Designs</title>
+<style>
+  @font-face { font-family: "Plex Arabic"; font-weight: 400; src: url("../src/JIH.Queue.Web/wwwroot/fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2") format("woff2"); unicode-range: U+0600-06FF, U+FB50-FDFF, U+FE70-FEFF; }
+  @font-face { font-family: "Plex Arabic"; font-weight: 600; src: url("../src/JIH.Queue.Web/wwwroot/fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2") format("woff2"); unicode-range: U+0600-06FF, U+FB50-FDFF, U+FE70-FEFF; }
+  @font-face { font-family: "Plex Arabic"; font-weight: 400; src: url("../src/JIH.Queue.Web/wwwroot/fonts/ibm-plex-sans-arabic-latin-400-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+2000-206F; }
+  @font-face { font-family: "Plex Arabic"; font-weight: 600; src: url("../src/JIH.Queue.Web/wwwroot/fonts/ibm-plex-sans-arabic-latin-600-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+2000-206F; }
+  :root { --pine:#0E3B33; --brass:#C8A04A; --sage:#E8EEE9; --ink:#14211E; --muted:#56665F; --line:#CFD9D3; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Plex Arabic", Tahoma, sans-serif; color: var(--ink); background: var(--sage); line-height: 1.6; }
+  header { background: var(--pine); color: #fff; padding: 3rem 2rem 2.5rem; }
+  header h1 { font-size: 2.4rem; margin: 0 0 .3rem; font-weight: 600; }
+  header p { margin: 0; opacity: .8; max-width: 70ch; }
+  main { max-width: 1280px; margin: 0 auto; padding: 2rem; }
+  h2 { font-size: 1.6rem; margin: 3rem 0 .4rem; font-weight: 600; }
+  h2 small { display: block; font-size: .95rem; font-weight: 400; color: var(--muted); }
+  h3 { font-size: 1.1rem; margin: 1.5rem 0 .5rem; }
+  p.note { color: var(--muted); max-width: 75ch; }
+  figure { margin: 1rem 0 2rem; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 1rem; }
+  figure img { width: 100%; display: block; border-radius: 6px; border: 1px solid #E3E9E5; }
+  figcaption { font-size: .9rem; color: var(--muted); margin-top: .6rem; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .phones { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+  .phones img { max-width: 300px; margin: 0 auto; }
+  .tokens { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: .8rem; }
+  .sw { border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: #fff; }
+  .sw div { height: 70px; }
+  .sw p { margin: 0; padding: .5rem .7rem; font-size: .85rem; }
+  .sw b { display: block; direction: ltr; text-align: right; }
+  ul { padding-inline-start: 1.2rem; }
+  li { margin: .25rem 0; }
+  @media (max-width: 800px) { .pair { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>تصاميم نظام إدارة الدور – المستشفى الإسلامي الأردني</h1>
+  <p>Designs for the outpatient queue system: Reception, Waiting-hall screen and Doctor dashboard, plus the patient phone screens and the admin dashboard. All screens are captures of the working prototype with dummy data. Arabic first (right-to-left), English available on every staff and patient screen.</p>
+</header>
+<main>
+
+<h2>هوية التصميم<small>Design language</small></h2>
+<p class="note">Deep pine green taken from hospital signage, and brass for the one thing that matters most: the number being called now. The same brass appears on the TV board, the doctor's "Call next" button and the patient's "It's your turn" message, so patients and staff learn one signal. One typeface (IBM Plex Sans Arabic, open licence, served from the server so it works without internet) covers Arabic and Latin. Ticket numbers are always written left-to-right with tabular digits so "A-015" never flips inside Arabic text.</p>
+<div class="tokens">
+  <div class="sw"><div style="background:#0E3B33"></div><p>Pine – headers, primary buttons<b>#0E3B33</b></p></div>
+  <div class="sw"><div style="background:#C8A04A"></div><p>Brass – "now calling"<b>#C8A04A</b></p></div>
+  <div class="sw"><div style="background:#E8EEE9"></div><p>Sage – page background<b>#E8EEE9</b></p></div>
+  <div class="sw"><div style="background:#14211E"></div><p>Ink – text<b>#14211E</b></p></div>
+  <div class="sw"><div style="background:#A8322B"></div><p>Red – no-show, cancel, closed<b>#A8322B</b></p></div>
+  <div class="sw"><div style="background:#2F7A4F"></div><p>Green – open, completed<b>#2F7A4F</b></p></div>
+</div>
+
+<h2>١. شاشة الاستقبال<small>1 · Reception</small></h2>
+<p class="note">Left column: the self-service QR code (it changes every 90 seconds so it only works inside the hospital) and the form for patients without a smartphone, with the priority option and verbal consent. Right column: every clinic's live status, then today's tickets with search, filters and actions: print, give priority, move to another clinic, cancel, and put a no-show back in the queue.</p>
+<figure><img src="screens/ar/02-reception.png" alt="Reception – Arabic"><figcaption>Reception – Arabic (default)</figcaption></figure>
+<figure><img src="screens/en/02-reception.png" alt="Reception – English"><figcaption>Reception – English</figcaption></figure>
+
+<h2>٢. شاشة قاعة الانتظار<small>2 · Waiting-hall screen (TV, 1920×1080)</small></h2>
+<p class="note">A board with one row per clinic: what is being served now and in which room (a clinic with three doctors shows three numbers), then the next numbers. When a doctor calls, a large brass card covers the board for 8 seconds and the voice announces in Arabic then English: "الرقم A 15، الرجاء التوجه إلى غرفة 101 – Number A 15, please go to room 101". Names are never shown or spoken. The screen is always bilingual.</p>
+<figure><img src="screens/ar/03-waiting-screen.png" alt="Waiting screen"><figcaption>Board</figcaption></figure>
+<figure><img src="screens/ar/03b-waiting-screen-calling.png" alt="Waiting screen calling"><figcaption>A call in progress (8 seconds, with the voice announcement). Sample audio: <a href="sample-announcement-A015-room101.mp3">sample-announcement-A015-room101.mp3</a></figcaption></figure>
+
+<h2>٣. لوحة الطبيب<small>3 · Doctor dashboard</small></h2>
+<p class="note">The current patient is shown large: ticket number, name, how long they waited, and the complaint they typed (shown only here). The main action, "End visit", is the widest button. "Didn't come" applies the rule: the first time the patient moves back 3 places, the second time they are marked a no-show. "Recall" repeats the announcement without changing the queue, and "Refer to clinic" sends the patient to another clinic's queue (urgent referrals go to the front). The shared clinic queue is on the left. Doctors start, pause and finish their shift from the top bar; a paused doctor receives no patients.</p>
+<figure><img src="screens/ar/04-doctor-dashboard.png" alt="Doctor dashboard"><figcaption>Doctor dashboard with a patient in the room</figcaption></figure>
+<figure><img src="screens/en/04-doctor-pick.png" alt="Doctor choose assignment"><figcaption>Nurses and admins choose any room of today; a doctor goes straight to their own room</figcaption></figure>
+
+<h2>شاشات المريض على الهاتف<small>Patient phone screens</small></h2>
+<div class="phones">
+  <figure><img src="screens/ar/05-patient-form.png" alt=""><figcaption>Form opened from the QR code</figcaption></figure>
+  <figure><img src="screens/ar/07-patient-ticket.png" alt=""><figcaption>Live ticket: patients ahead and estimated wait</figcaption></figure>
+  <figure><img src="screens/ar/08-patient-ticket-status.png" alt=""><figcaption>Status updates by itself</figcaption></figure>
+  <figure><img src="screens/ar/06-patient-expired.png" alt=""><figcaption>Expired or copied QR code</figcaption></figure>
+</div>
+
+<h2>لوحة مدير النظام<small>System admin</small></h2>
+<div class="pair">
+  <figure><img src="screens/ar/10-admin.png" alt=""><figcaption>Today: live figures, clinic status, doctors, end of day</figcaption></figure>
+  <figure><img src="screens/ar/10-admin-reports.png" alt=""><figcaption>Reports for any period, saved daily reports, CSV export</figcaption></figure>
+  <figure><img src="screens/ar/10-admin-assignments.png" alt=""><figcaption>Daily distribution of doctors to clinics and rooms</figcaption></figure>
+  <figure><img src="screens/ar/10-admin-clinics.png" alt=""><figcaption>Clinics, statuses, daily limits and rooms</figcaption></figure>
+  <figure><img src="screens/ar/10-admin-audit.png" alt=""><figcaption>Audit log (no patient names or phones)</figcaption></figure>
+  <figure><img src="screens/ar/10-admin-settings.png" alt=""><figcaption>Settings: queue rules, notifications, voice, reset time</figcaption></figure>
+</div>
+<p class="note">Folder <code>screens/en</code> has the English versions of the staff screens.</p>
+</main>
+</body>
+</html>

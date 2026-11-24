@@ -1,0 +1,108 @@
+@page "/join"
+@layout PublicLayout
+@rendermode InteractiveServer
+@inject Loc L
+@inject QrTokenService Qr
+@inject SettingsService Settings
+@inject QueueService Queue
+@inject QueueQueryService Query
+@inject NavigationManager Nav
+@inject IClock Clock
+
+@* Patient self-service form, opened by scanning the rotating QR code at reception. *@
+<PageTitle>@L["join.title"]</PageTitle>
+
+@if (_state == State.Loading)
+{
+    <p class="muted">@L["common.loading"]</p>
+}
+else if (_state == State.Expired)
+{
+    <h1>@L["join.expiredTitle"]</h1>
+    <p>@L["join.expiredText"]</p>
+}
+else if (_clinics.Count == 0)
+{
+    <h1>@L["join.title"]</h1>
+    <div class="alert alert-info">@L["join.noClinics"]</div>
+}
+else
+{
+    <h1>@L["join.title"]</h1>
+    <p class="muted">@L["join.intro"]</p>
+    <Flash Message="@_error" IsError="true" />
+    <form @onsubmit="SubmitAsync" @onsubmit:preventDefault>
+        <label class="field"><span>@L["join.name"]</span>
+            <input type="text" @bind="_name" maxlength="@QueueService.MaxNameLength" autocomplete="name" required />
+        </label>
+        <label class="field"><span>@L["join.phone"]</span>
+            <input type="tel" @bind="_phone" inputmode="tel" autocomplete="tel" dir="ltr" placeholder="07XXXXXXXX" required />
+            <span class="hint">@L["join.phoneHint"]</span>
+        </label>
+        <label class="field"><span>@L["join.clinic"]</span>
+            <select @bind="_clinicId" required>
+                <option value="0">@L["join.chooseClinic"]</option>
+                @foreach (var c in _clinics)
+                {
+                    <option value="@c.Id">@c.Name(L.IsArabic)</option>
+                }
+            </select>
+        </label>
+        <label class="field"><span>@L["join.complaint"]</span>
+            <textarea @bind="_complaint" maxlength="@QueueService.MaxComplaintLength" rows="3" required></textarea>
+            <span class="hint">@L["join.complaintHint"]</span>
+        </label>
+        <label class="field"><span>@L["join.language"]</span>
+            <select @bind="_language">
+                <option value="ar">العربية</option>
+                <option value="en">English</option>
+            </select>
+        </label>
+        <label class="check">
+            <input type="checkbox" @bind="_consent" />
+            <span>@L["join.consent"]</span>
+        </label>
+        <button class="btn btn-primary btn-xl btn-block" type="submit" disabled="@_busy">@L["join.submit"]</button>
+    </form>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "k")] public string? Token { get; set; }
+
+    private enum State { Loading, Ready, Expired }
+    private State _state = State.Loading;
+    private List<Clinic> _clinics = [];
+    private string _name = "", _phone = "", _complaint = "", _language = "ar", _error = "";
+    private int _clinicId;
+    private bool _consent, _busy;
+    private DateTime _openedAt;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var s = await Settings.GetAsync();
+        _language = L.Lang;
+        if (!Qr.Validate(Token, s.QrRotationSeconds)) { _state = State.Expired; return; }
+        _openedAt = Clock.Now;
+        _clinics = (await Query.GetClinicsAsync()).Where(c => c.Status is ClinicStatus.Open or ClinicStatus.Paused).ToList();
+        _state = State.Ready;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_busy) return;
+        // The QR token was valid when the form opened; give the patient 15 minutes to fill it in.
+        if (Clock.Now - _openedAt > TimeSpan.FromMinutes(15)) { _state = State.Expired; return; }
+        _busy = true; _error = "";
+        try
+        {
+            var r = await Queue.IssueAsync(new IssueTicketRequest
+            {
+                FullName = _name, Phone = _phone, ClinicId = _clinicId, Complaint = _complaint, Language = _language,
+                ConsentGiven = _consent, Source = TicketSource.SelfServiceQr, IssuedBy = "self-service"
+            });
+            if (r.Ok) Nav.NavigateTo($"/ticket/{r.Value!.PublicId}");
+            else _error = _clinicId == 0 ? L["join.chooseClinic"] : L.Error(r.Error, r.Args);
+        }
+        finally { _busy = false; }
+    }
+}

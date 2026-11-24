@@ -1,0 +1,54 @@
+@page "/reception/qr"
+@attribute [Authorize(Roles = "Receptionist,Admin")]
+@layout ScreenLayout
+@rendermode InteractiveServer
+@inject Loc L
+@inject QrTokenService Qr
+@inject SettingsService Settings
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@implements IDisposable
+
+@* Full-screen rotating QR for a second monitor / tablet facing the patients at reception. *@
+<PageTitle>@L["rec.qrTitle"]</PageTitle>
+<div class="qr-screen">
+    <div>
+        <h1>@L["join.title"]</h1>
+        <div class="qr" id="big-qr"></div>
+        <p style="font-size:1.3rem;margin-top:1.5rem;opacity:.85">@L["join.intro"]</p>
+        <p class="small" style="opacity:.6">@L.Format("rec.qrRefresh", _left)</p>
+    </div>
+</div>
+@code {
+    private PeriodicTimer? _timer;
+    private string _token = "";
+    private int _left, _rotation = 90;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _rotation = (await Settings.GetAsync()).QrRotationSeconds;
+        await Update(true);
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        _ = Loop();
+    }
+
+    private async Task Loop()
+    {
+        try { while (_timer is not null && await _timer.WaitForNextTickAsync()) await InvokeAsync(async () => { await Update(false); StateHasChanged(); }); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task Update(bool force)
+    {
+        _left = (int)Math.Ceiling(Qr.TimeLeft(_rotation).TotalSeconds);
+        var t = Qr.CurrentToken(_rotation);
+        if (!force && t == _token) return;
+        _token = t;
+        var s = await Settings.GetAsync();
+        var baseUrl = string.IsNullOrWhiteSpace(s.PublicBaseUrl) ? Nav.BaseUri : s.PublicBaseUrl.TrimEnd('/') + "/";
+        await JS.InvokeVoidAsync("jihQr.render", "big-qr", $"{baseUrl}join?k={Uri.EscapeDataString(t)}");
+    }
+
+    public void Dispose() { _timer?.Dispose(); _timer = null; }
+}

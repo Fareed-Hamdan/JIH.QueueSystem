@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/JIH.Queue.Core/JIH.Queue.Core.csproj" />
+    <Project Path="src/JIH.Queue.Data.Oracle/JIH.Queue.Data.Oracle.csproj" />
+    <Project Path="src/JIH.Queue.Web/JIH.Queue.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/JIH.Queue.RuleTests/JIH.Queue.RuleTests.csproj" />
+  </Folder>
+</Solution>

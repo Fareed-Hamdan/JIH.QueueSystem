@@ -1,0 +1,90 @@
+@page "/admin/users"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inherits LivePageBase
+@inject AdminService Admin
+
+<PageTitle>@L["users.title"]</PageTitle>
+<Flash Message="@FlashMessage" IsError="@FlashIsError" Toast="true" />
+
+<div class="page-head">
+    <h1>@L["users.title"]</h1>
+    <button class="btn btn-primary" @onclick="() => Edit(new StaffUser { IsActive = true, Role = StaffRole.Receptionist })">@L["users.add"]</button>
+</div>
+
+<section class="panel">
+    <table class="data">
+        <thead><tr><th>@L["login.username"]</th><th>@L["users.displayName"]</th><th>@L["users.role"]</th><th>@L["users.doctor"]</th><th>@L["users.lastLogin"]</th><th>@L["common.status"]</th><th class="num">@L["common.actions"]</th></tr></thead>
+        <tbody>
+            @foreach (var u in _users)
+            {
+                <tr>
+                    <td dir="ltr" style="text-align:start">@u.Username</td>
+                    <td>@u.DisplayName</td>
+                    <td>@L.Enum(u.Role)</td>
+                    <td>@(_doctors.FirstOrDefault(d => d.Id == u.DoctorId)?.Name(L.IsArabic))</td>
+                    <td class="tnum">@u.LastLoginAt?.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td><StatusPill Value="@(u.IsActive ? "Active" : "Closed")" Text="@(u.IsActive ? L["common.active"] : L["common.inactive"])" /></td>
+                    <td><div class="actions"><button class="btn btn-sm" @onclick="() => Edit(u)">@L["common.edit"]</button></div></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+@if (_edit is not null)
+{
+    <div class="modal-back" @onclick="() => _edit = null">
+        <div class="modal" @onclick:stopPropagation role="dialog" aria-modal="true">
+            <h2>@(_edit.Id == 0 ? L["users.add"] : L["common.edit"])</h2>
+            <label class="field"><span>@L["login.username"]</span><input type="text" @bind="_edit.Username" dir="ltr" autocomplete="off" /></label>
+            <label class="field"><span>@L["users.displayName"]</span><input type="text" @bind="_edit.DisplayName" /></label>
+            <label class="field"><span>@L["users.role"]</span>
+                <select @bind="_edit.Role">@foreach (var r in Enum.GetValues<StaffRole>()) { <option value="@r">@L.Enum(r)</option> }</select>
+            </label>
+            @if (_edit.Role == StaffRole.Doctor)
+            {
+                <label class="field"><span>@L["users.doctor"]</span>
+                    <select @bind="_edit.DoctorId">
+                        <option value="">—</option>
+                        @foreach (var d in _doctors) { <option value="@d.Id">@d.Name(L.IsArabic)</option> }
+                    </select>
+                </label>
+            }
+            <label class="field"><span>@L["users.newPassword"]</span>
+                <input type="password" @bind="_password" autocomplete="new-password" dir="ltr" />
+                @if (_edit.Id != 0) { <span class="hint">@L["users.passwordHint"]</span> }
+            </label>
+            <label class="check"><input type="checkbox" @bind="_edit.IsActive" /><span>@L["common.active"]</span></label>
+            <div class="modal-actions">
+                <button class="btn" @onclick="() => _edit = null">@L["common.cancel"]</button>
+                <button class="btn btn-primary" @onclick="SaveAsync">@L["common.save"]</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<StaffUser> _users = [];
+    private List<Doctor> _doctors = [];
+    private StaffUser? _edit;
+    private string _password = "";
+
+    protected override async Task LoadAsync()
+    {
+        _users = await Admin.GetUsersAsync();
+        _doctors = await Admin.GetDoctorsAsync();
+    }
+
+    private void Edit(StaffUser u)
+    {
+        _password = "";
+        _edit = new StaffUser { Id = u.Id, Username = u.Username, DisplayName = u.DisplayName, Role = u.Role, DoctorId = u.DoctorId, IsActive = u.IsActive };
+    }
+
+    private async Task SaveAsync()
+    {
+        var r = await Admin.SaveUserAsync(_edit!, _password, Username);
+        if (r.Ok) { _edit = null; _password = ""; Flash(L["common.saved"]); await LoadAsync(); } else Flash(L.Error(r.Error, r.Args), true);
+    }
+}

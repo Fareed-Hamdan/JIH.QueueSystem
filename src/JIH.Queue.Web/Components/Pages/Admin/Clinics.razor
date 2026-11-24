@@ -1,0 +1,124 @@
+@page "/admin/clinics"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inherits LivePageBase
+@inject AdminService Admin
+@inject QueueQueryService Query
+
+<PageTitle>@L["clinics.title"]</PageTitle>
+<Flash Message="@FlashMessage" IsError="@FlashIsError" Toast="true" />
+
+<div class="page-head">
+    <h1>@L["clinics.title"]</h1>
+    <button class="btn btn-primary" @onclick="() => Edit(new Clinic { Status = ClinicStatus.Open, IsActive = true, SortOrder = _clinics.Count + 1 })">@L["clinics.add"]</button>
+</div>
+<p class="small muted">@L["clinics.statusHelp"]</p>
+
+<section class="panel">
+    <div class="table-wrap">
+        <table class="data">
+            <thead><tr>
+                <th>@L["clinics.code"]</th><th>@L["clinics.nameAr"]</th><th>@L["clinics.nameEn"]</th><th>@L["common.status"]</th>
+                <th class="num">@L["clinics.limit"]</th><th>@L["clinics.cutoff"]</th><th>@L["clinics.rooms"]</th><th></th><th class="num">@L["common.actions"]</th>
+            </tr></thead>
+            <tbody>
+                @foreach (var c in _clinics)
+                {
+                    <tr>
+                        <td><b class="tnum">@c.Code</b></td>
+                        <td>@c.NameAr</td>
+                        <td>@c.NameEn</td>
+                        <td><StatusPill Value="@c.Status.ToString()" Text="@L.Enum(c.Status)" /></td>
+                        <td class="num">@(c.DailyTicketLimit?.ToString() ?? L["clinics.unlimited"])</td>
+                        <td class="tnum">@c.TicketCutoffTime</td>
+                        <td>
+                            @foreach (var r in _rooms.Where(r => r.ClinicId == c.Id))
+                            {
+                                <button class="pill" style="border:0;cursor:pointer;margin:1px;@(r.IsActive ? "" : "opacity:.5")" @onclick="() => EditRoom(r)">@r.Number</button>
+                            }
+                            <button class="btn btn-sm btn-ghost" @onclick="() => EditRoom(new Room { ClinicId = c.Id, IsActive = true })">+ @L["clinics.addRoom"]</button>
+                        </td>
+                        <td>@(c.IsActive ? "" : L["common.inactive"])</td>
+                        <td><div class="actions"><button class="btn btn-sm" @onclick="() => Edit(c)">@L["common.edit"]</button></div></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@if (_edit is not null)
+{
+    <div class="modal-back" @onclick="() => _edit = null">
+        <div class="modal" @onclick:stopPropagation role="dialog" aria-modal="true">
+            <h2>@(_edit.Id == 0 ? L["clinics.add"] : L["common.edit"])</h2>
+            <div class="grid grid-2" style="gap:.2rem 1rem">
+                <label class="field"><span>@L["clinics.code"]</span><input type="text" @bind="_edit.Code" maxlength="1" dir="ltr" /></label>
+                <label class="field"><span>@L["clinics.order"]</span><input type="number" @bind="_edit.SortOrder" /></label>
+                <label class="field"><span>@L["clinics.nameAr"]</span><input type="text" @bind="_edit.NameAr" dir="rtl" /></label>
+                <label class="field"><span>@L["clinics.nameEn"]</span><input type="text" @bind="_edit.NameEn" dir="ltr" /></label>
+                <label class="field"><span>@L["common.status"]</span>
+                    <select @bind="_edit.Status">@foreach (var s in Enum.GetValues<ClinicStatus>()) { <option value="@s">@L.Enum(s)</option> }</select>
+                </label>
+                <label class="field"><span>@L["clinics.limit"]</span><input type="number" @bind="_edit.DailyTicketLimit" placeholder="@L["clinics.unlimited"]" /></label>
+                <label class="field"><span>@L["clinics.cutoff"]</span><input type="text" @bind="_edit.TicketCutoffTime" placeholder="13:30" dir="ltr" /></label>
+            </div>
+            <label class="check"><input type="checkbox" @bind="_edit.IsActive" /><span>@L["common.active"]</span></label>
+            <div class="modal-actions">
+                <button class="btn" @onclick="() => _edit = null">@L["common.cancel"]</button>
+                <button class="btn btn-primary" @onclick="SaveAsync">@L["common.save"]</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_room is not null)
+{
+    <div class="modal-back" @onclick="() => _room = null">
+        <div class="modal" @onclick:stopPropagation role="dialog" aria-modal="true">
+            <h2>@(_room.Id == 0 ? L["clinics.addRoom"] : L["common.edit"])</h2>
+            <label class="field"><span>@L["common.clinic"]</span>
+                <select @bind="_room.ClinicId">@foreach (var c in _clinics) { <option value="@c.Id">@c.Code – @c.Name(L.IsArabic)</option> }</select>
+            </label>
+            <label class="field"><span>@L["clinics.roomNumber"]</span><input type="number" @bind="_room.Number" min="1" max="999" /></label>
+            <label class="check"><input type="checkbox" @bind="_room.IsActive" /><span>@L["common.active"]</span></label>
+            <div class="modal-actions">
+                <button class="btn" @onclick="() => _room = null">@L["common.cancel"]</button>
+                <button class="btn btn-primary" @onclick="SaveRoomAsync">@L["common.save"]</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Clinic> _clinics = [];
+    private List<Room> _rooms = [];
+    private Clinic? _edit;
+    private Room? _room;
+
+    protected override async Task LoadAsync()
+    {
+        _clinics = await Query.GetClinicsAsync(activeOnly: false);
+        _rooms = await Admin.GetRoomsAsync();
+    }
+
+    private void Edit(Clinic c) => _edit = new Clinic
+    {
+        Id = c.Id, Code = c.Code, NameAr = c.NameAr, NameEn = c.NameEn, Status = c.Status, DailyTicketLimit = c.DailyTicketLimit,
+        TicketCutoffTime = c.TicketCutoffTime, SortOrder = c.SortOrder, IsActive = c.IsActive
+    };
+
+    private void EditRoom(Room r) => _room = new Room { Id = r.Id, ClinicId = r.ClinicId, Number = r.Number, IsActive = r.IsActive };
+
+    private async Task SaveAsync()
+    {
+        var r = await Admin.SaveClinicAsync(_edit!, Username);
+        if (r.Ok) { _edit = null; Flash(L["common.saved"]); await LoadAsync(); } else Flash(L.Error(r.Error, r.Args), true);
+    }
+
+    private async Task SaveRoomAsync()
+    {
+        var r = await Admin.SaveRoomAsync(_room!, Username);
+        if (r.Ok) { _room = null; Flash(L["common.saved"]); await LoadAsync(); } else Flash(L.Error(r.Error, r.Args), true);
+    }
+}

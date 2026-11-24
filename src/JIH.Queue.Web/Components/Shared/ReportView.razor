@@ -1,0 +1,112 @@
+@inject Loc L
+@* Renders a ReportSummary: key figures, per clinic, per doctor, tickets per hour, per day. *@
+
+@if (Summary is null || Summary.Total == 0)
+{
+    <div class="panel empty">@L["rep.empty"]</div>
+}
+else
+{
+    var s = Summary;
+    <div class="metrics">
+        <div class="metric"><b>@s.Total</b><span>@L["adm.total"]</span></div>
+        <div class="metric"><b>@s.Completed</b><span>@L["adm.completed"]</span></div>
+        @if (ShowLive)
+        {
+            <div class="metric"><b>@s.Waiting</b><span>@L["adm.waiting"]</span></div>
+            <div class="metric"><b>@s.InService</b><span>@L["adm.inService"]</span></div>
+        }
+        <div class="metric"><b>@s.NoShows</b><span>@L["adm.noShows"] (@s.NoShowRate%)</span></div>
+        <div class="metric"><b>@Min(s.AvgWaitMinutes)</b><span>@L["adm.avgWait"] (@L["common.minutes"])</span></div>
+        <div class="metric"><b>@Min(s.AvgServiceMinutes)</b><span>@L["adm.avgService"] (@L["common.minutes"])</span></div>
+        @foreach (var extra in Extras)
+        {
+            <div class="metric"><b>@extra.Value</b><span>@extra.Label</span></div>
+        }
+    </div>
+
+    <div class="grid grid-2" style="margin-top:1.25rem">
+        <section class="panel">
+            <h2>@L["rep.perClinic"]</h2>
+            <div class="table-wrap">
+                <table class="data">
+                    <thead><tr>
+                        <th>@L["common.clinic"]</th><th class="num">@L["adm.total"]</th><th class="num">@L["adm.completed"]</th>
+                        <th class="num">@L["adm.noShows"]</th><th class="num">@L["rep.notSeen"]</th>
+                        <th class="num">@L["adm.avgWait"]</th><th class="num">@L["rep.maxWait"]</th><th class="num">@L["adm.avgService"]</th>
+                    </tr></thead>
+                    <tbody>
+                        @foreach (var c in s.Clinics)
+                        {
+                            <tr>
+                                <td><b class="tnum">@c.Code</b> @(L.IsArabic ? c.NameAr : c.NameEn)</td>
+                                <td class="num">@c.Total</td><td class="num">@c.Completed</td><td class="num">@c.NoShows</td><td class="num">@c.NotSeen</td>
+                                <td class="num">@Min(c.AvgWaitMinutes)</td><td class="num">@Min(c.MaxWaitMinutes)</td><td class="num">@Min(c.AvgServiceMinutes)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <section class="stack">
+            <div class="panel">
+                <h2>@L["adm.byHour"]</h2>
+                @{ var max = Math.Max(1, s.IssuedByHour.Max()); var first = FirstHour(s); var last = LastHour(s); }
+                <div class="bars" style="grid-template-columns:repeat(@(last - first + 1),1fr)">
+                    @for (var h = first; h <= last; h++)
+                    {
+                        var v = s.IssuedByHour[h];
+                        <div class="@(v == max ? "peak" : "")" style="height:@(100 * v / max)%" title="@($"{h:00}:00 – {v}")"></div>
+                    }
+                </div>
+                <div class="bars-axis" style="grid-template-columns:repeat(@(last - first + 1),1fr)">
+                    @for (var h = first; h <= last; h++) { <span>@h</span> }
+                </div>
+            </div>
+            <div class="panel">
+                <h2>@L["rep.perDoctor"]</h2>
+                @if (s.Doctors.Count == 0) { <div class="empty">@L["common.none"]</div> }
+                else
+                {
+                    <table class="data">
+                        <thead><tr><th>@L["doctors.name"]</th><th class="num">@L["adm.completed"]</th><th class="num">@L["adm.avgService"]</th><th class="num">@L["adm.noShows"]</th></tr></thead>
+                        <tbody>
+                            @foreach (var d in s.Doctors)
+                            {
+                                <tr><td>@(L.IsArabic ? d.NameAr : d.NameEn)</td><td class="num">@d.Completed</td><td class="num">@Min(d.AvgServiceMinutes)</td><td class="num">@d.NoShows</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </section>
+    </div>
+
+    @if (s.Days.Count > 1)
+    {
+        <section class="panel" style="margin-top:1.25rem">
+            <h2>@L["rep.perDay"]</h2>
+            <div class="table-wrap">
+                <table class="data">
+                    <thead><tr><th>@L["common.date"]</th><th class="num">@L["adm.total"]</th><th class="num">@L["adm.completed"]</th><th class="num">@L["adm.noShows"]</th><th class="num">@L["adm.avgWait"]</th></tr></thead>
+                    <tbody>
+                        @foreach (var d in s.Days.OrderByDescending(d => d.Date))
+                        {
+                            <tr><td class="tnum">@d.Date.ToString("yyyy-MM-dd ddd")</td><td class="num">@d.Total</td><td class="num">@d.Completed</td><td class="num">@d.NoShows</td><td class="num">@Min(d.AvgWaitMinutes)</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+}
+
+@code {
+    [Parameter] public ReportSummary? Summary { get; set; }
+    [Parameter] public bool ShowLive { get; set; }
+    [Parameter] public IReadOnlyList<(string Label, string Value)> Extras { get; set; } = [];
+
+    private static string Min(double? v) => v?.ToString("0.#") ?? "—";
+    private static int FirstHour(ReportSummary s) { var i = Array.FindIndex(s.IssuedByHour, x => x > 0); return i < 0 ? 7 : Math.Min(i, 7); }
+    private static int LastHour(ReportSummary s) { var i = Array.FindLastIndex(s.IssuedByHour, x => x > 0); return Math.Max(i < 0 ? 16 : i, 16); }
+}

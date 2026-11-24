@@ -1,0 +1,294 @@
+@page "/reception"
+@attribute [Authorize(Roles = "Receptionist,Admin")]
+@rendermode InteractiveServer
+@inherits LivePageBase
+@inject QueueService Queue
+@inject QueueQueryService Query
+@inject SettingsService Settings
+@inject QrTokenService Qr
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>@L["rec.title"]</PageTitle>
+<Flash Message="@FlashMessage" IsError="@FlashIsError" Toast="true" />
+
+<div class="grid grid-reception">
+    <aside class="stack">
+        <section class="panel qr-box" aria-labelledby="qr-h">
+            <h2 id="qr-h">@L["rec.qrTitle"]</h2>
+            <div class="qr" id="reception-qr" aria-label="QR"></div>
+            <div class="qr-timer"><div style="width:@(_qrPercent)%"></div></div>
+            <div class="small muted">@L.Format("rec.qrRefresh", _qrSecondsLeft)</div>
+            <p class="small muted" style="margin:.8rem 0">@L["rec.qrText"]</p>
+            <a class="btn btn-sm" href="/reception/qr" target="_blank">@L["rec.qrFullscreen"]</a>
+        </section>
+
+        <section class="panel" aria-labelledby="issue-h">
+            <h2 id="issue-h">@L["rec.issueTitle"]</h2>
+            <p class="small muted">@L["rec.issueHint"]</p>
+            <form @onsubmit="IssueAsync" @onsubmit:preventDefault>
+                <label class="field"><span>@L["join.name"]</span>
+                    <input type="text" @bind="_name" maxlength="@QueueService.MaxNameLength" required />
+                </label>
+                <label class="field"><span>@L["join.phone"]</span>
+                    <input type="tel" @bind="_phone" dir="ltr" placeholder="07XXXXXXXX" required />
+                </label>
+                <label class="field"><span>@L["join.clinic"]</span>
+                    <select @bind="_clinicId">
+                        <option value="0">@L["join.chooseClinic"]</option>
+                        @foreach (var c in _clinics.Where(c => c.Status is ClinicStatus.Open or ClinicStatus.Paused))
+                        {
+                            <option value="@c.Id">@c.Code – @c.Name(L.IsArabic)</option>
+                        }
+                    </select>
+                </label>
+                <label class="field"><span>@L["join.complaint"]</span>
+                    <textarea @bind="_complaint" rows="2" maxlength="@QueueService.MaxComplaintLength"></textarea>
+                </label>
+                <label class="field"><span>@L["join.language"]</span>
+                    <select @bind="_language"><option value="ar">العربية</option><option value="en">English</option></select>
+                </label>
+                <label class="check"><input type="checkbox" @bind="_priority" /><span>@L["rec.priority"]</span></label>
+                <label class="check"><input type="checkbox" @bind="_consent" /><span>@L["rec.consentVerbal"]</span></label>
+                <button type="submit" class="btn btn-primary btn-block" disabled="@_busy">@L["rec.issue"]</button>
+            </form>
+        </section>
+    </aside>
+
+    <div class="stack">
+        <section class="panel">
+            <div class="panel-head"><h2>@L["rec.queues"]</h2></div>
+            <div class="clinic-strip">
+                @foreach (var d in _display)
+                {
+                    <div class="clinic-chip">
+                        <div class="name"><span><span class="code">@d.Code</span> @(L.IsArabic ? d.NameAr : d.NameEn)</span>
+                            <StatusPill Value="@d.Status.ToString()" Text="@L.Enum(d.Status)" /></div>
+                        <div class="meta">
+                            <span><b>@d.WaitingCount</b> @L["rec.waiting"]</span>
+                            @if (d.Serving.Count > 0)
+                            {
+                                <span>@L["rec.serving"]: <span class="tnum">@string.Join(", ", d.Serving.Select(s => s.Number))</span></span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <h2>@L["rec.today"] <span class="muted small">(@_tickets.Count)</span></h2>
+                <div class="inline-form">
+                    <input type="text" @bind="_search" @bind:event="oninput" placeholder="@L["rec.searchPlaceholder"]" style="width:200px" aria-label="@L["common.search"]" />
+                    <select @bind="_filterClinic" style="width:auto" aria-label="@L["common.clinic"]">
+                        <option value="0">@L["rec.filterClinic"]</option>
+                        @foreach (var c in _clinics) { <option value="@c.Id">@c.Code – @c.Name(L.IsArabic)</option> }
+                    </select>
+                    <select @bind="_filterStatus" style="width:auto" aria-label="@L["common.status"]">
+                        <option value="">@L["rec.filterStatus"]</option>
+                        @foreach (var s in Enum.GetValues<TicketStatus>()) { <option value="@s">@L.Enum(s)</option> }
+                    </select>
+                </div>
+            </div>
+            @{ var rows = Filtered().ToList(); }
+            @if (rows.Count == 0)
+            {
+                <div class="empty">@L["rec.noTickets"]</div>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="data">
+                        <thead><tr>
+                            <th>@L["rec.number"]</th><th>@L["rec.patient"]</th><th>@L["rec.phone"]</th><th>@L["common.clinic"]</th>
+                            <th>@L["common.status"]</th><th>@L["rec.issuedAt"]</th><th class="num">@L["common.actions"]</th>
+                        </tr></thead>
+                        <tbody>
+                            @foreach (var t in rows)
+                            {
+                                <tr>
+                                    <td><b class="tnum">@t.Number</b></td>
+                                    <td>@t.PatientName
+                                        @if (t.IsPriority) { <span class="pill pill-priority">@L["rec.priorityBadge"]</span> }
+                                        @if (t.SkipCount > 0) { <span class="pill">@L.Format("rec.skipped", t.SkipCount)</span> }
+                                    </td>
+                                    <td><span class="tnum">@t.PhoneLocal</span></td>
+                                    <td>@ClinicName(t.ClinicId)</td>
+                                    <td><StatusPill Value="@t.Status.ToString()" Text="@L.Enum(t.Status)" />
+                                        @if (t.Status == TicketStatus.Called && t.RoomNumber is int rn) { <span class="small muted"> · @L["common.room"] @rn</span> }
+                                    </td>
+                                    <td><span class="tnum">@t.IssuedAt.ToString("HH:mm")</span></td>
+                                    <td>
+                                        <div class="actions">
+                                            <button class="btn btn-sm" @onclick="() => Print(t.PublicId)">@L["common.print"]</button>
+                                            @if (t.Status == TicketStatus.NoShow)
+                                            {
+                                                <button class="btn btn-sm btn-brass" @onclick="() => ReinstateAsync(t)">@L["rec.reinstate"]</button>
+                                            }
+                                            @if (t.Status == TicketStatus.Waiting)
+                                            {
+                                                <button class="btn btn-sm" @onclick="() => TogglePriorityAsync(t)">@(t.IsPriority ? L["rec.removePriority"] : L["rec.makePriority"])</button>
+                                                <button class="btn btn-sm" @onclick="() => _moving = t">@L["rec.moveClinic"]</button>
+                                                <button class="btn btn-sm btn-danger" @onclick="() => _cancelling = t">@L["rec.cancelTicket"]</button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    </div>
+</div>
+
+@if (_moving is not null)
+{
+    <div class="modal-back" @onclick="() => _moving = null">
+        <div class="modal" @onclick:stopPropagation role="dialog" aria-modal="true">
+            <h2>@L["rec.moveClinic"] – <span class="tnum">@_moving.Number</span></h2>
+            <label class="field"><span>@L["common.clinic"]</span>
+                <select @bind="_moveTo">
+                    <option value="0">@L["join.chooseClinic"]</option>
+                    @foreach (var c in _clinics.Where(c => c.Id != _moving.ClinicId && c.Status is ClinicStatus.Open or ClinicStatus.Paused))
+                    { <option value="@c.Id">@c.Code – @c.Name(L.IsArabic)</option> }
+                </select>
+            </label>
+            <div class="modal-actions">
+                <button class="btn" @onclick="() => _moving = null">@L["common.cancel"]</button>
+                <button class="btn btn-primary" disabled="@(_moveTo == 0)" @onclick="MoveAsync">@L["common.save"]</button>
+            </div>
+        </div>
+    </div>
+}
+@if (_cancelling is not null)
+{
+    <div class="modal-back" @onclick="() => _cancelling = null">
+        <div class="modal" @onclick:stopPropagation role="dialog" aria-modal="true">
+            <h2>@L.Format("rec.confirmCancel", _cancelling.Number)</h2>
+            <div class="modal-actions">
+                <button class="btn" @onclick="() => _cancelling = null">@L["common.no"]</button>
+                <button class="btn btn-danger" @onclick="CancelAsync">@L["rec.cancelTicket"]</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Clinic> _clinics = [];
+    private List<DisplayClinic> _display = [];
+    private List<QueueRow> _tickets = [];
+    private string _name = "", _phone = "", _complaint = "", _language = "ar", _search = "", _filterStatus = "";
+    private int _clinicId, _filterClinic, _moveTo;
+    private bool _priority, _consent, _busy;
+    private QueueRow? _moving, _cancelling;
+
+    private string _qrToken = "", _qrUrl = "";
+    private int _qrSecondsLeft, _qrPercent = 100, _rotation = 90;
+    private PeriodicTimer? _timer;
+
+    protected override async Task LoadAsync()
+    {
+        _clinics = await Query.GetClinicsAsync();
+        _display = await Query.GetDisplayAsync([], 0);
+        _tickets = (await Query.GetTodayTicketsAsync()).OrderByDescending(t => t.IssuedAt).ToList();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _rotation = (await Settings.GetAsync()).QrRotationSeconds;
+        await UpdateQrAsync(force: true);
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        _ = TickAsync();
+    }
+
+    private async Task TickAsync()
+    {
+        try
+        {
+            while (_timer is not null && await _timer.WaitForNextTickAsync())
+                await InvokeAsync(async () => { await UpdateQrAsync(false); StateHasChanged(); });
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task UpdateQrAsync(bool force)
+    {
+        var token = Qr.CurrentToken(_rotation);
+        var left = Qr.TimeLeft(_rotation);
+        _qrSecondsLeft = (int)Math.Ceiling(left.TotalSeconds);
+        _qrPercent = (int)(100 * left.TotalSeconds / _rotation);
+        if (!force && token == _qrToken) return;
+        _qrToken = token;
+        var s = await Settings.GetAsync();
+        var baseUrl = string.IsNullOrWhiteSpace(s.PublicBaseUrl) ? Nav.BaseUri : s.PublicBaseUrl.TrimEnd('/') + "/";
+        _qrUrl = $"{baseUrl}join?k={Uri.EscapeDataString(token)}";
+        await JS.InvokeVoidAsync("jihQr.render", "reception-qr", _qrUrl);
+    }
+
+    private IEnumerable<QueueRow> Filtered()
+    {
+        var q = _tickets.AsEnumerable();
+        if (_filterClinic != 0) q = q.Where(t => t.ClinicId == _filterClinic);
+        if (Enum.TryParse<TicketStatus>(_filterStatus, out var st)) q = q.Where(t => t.Status == st);
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var s = _search.Trim();
+            q = q.Where(t => t.Number.Contains(s, StringComparison.OrdinalIgnoreCase) || t.PatientName.Contains(s, StringComparison.OrdinalIgnoreCase) || t.PhoneLocal.Contains(s));
+        }
+        return q;
+    }
+
+    private string ClinicName(int id) => _clinics.FirstOrDefault(c => c.Id == id)?.Name(L.IsArabic) ?? "";
+
+    private async Task IssueAsync()
+    {
+        if (_busy) return;
+        if (_clinicId == 0) { Flash(L["join.chooseClinic"], true); return; }
+        _busy = true;
+        try
+        {
+            var r = await Queue.IssueAsync(new IssueTicketRequest
+            {
+                FullName = _name, Phone = _phone, ClinicId = _clinicId, Complaint = string.IsNullOrWhiteSpace(_complaint) ? "—مراجعة—" : _complaint,
+                Language = _language, IsPriority = _priority, ConsentGiven = _consent, Source = TicketSource.Reception, IssuedBy = Username
+            });
+            if (!r.Ok) { Flash(L.Error(r.Error, r.Args), true); return; }
+            Flash(L.Format("rec.issued", r.Value!.Number));
+            _name = _phone = _complaint = ""; _priority = _consent = false;
+            Print(r.Value.PublicId);
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private void Print(string publicId) => _ = JS.InvokeVoidAsync("jihPrint.openTicket", $"/print/{publicId}").AsTask();
+
+    private async Task ReinstateAsync(QueueRow t) { Flash(await Queue.ReinstateAsync(t.TicketId, Username), $"{t.Number} ✓"); await LoadAsync(); }
+    private async Task TogglePriorityAsync(QueueRow t) { Flash(await Queue.SetPriorityAsync(t.TicketId, !t.IsPriority, Username), $"{t.Number} ✓"); await LoadAsync(); }
+
+    private async Task MoveAsync()
+    {
+        var t = _moving!; _moving = null;
+        var r = await Queue.ChangeClinicAsync(t.TicketId, _moveTo, Username);
+        _moveTo = 0;
+        if (r.Ok) { Flash(L.Format("rec.issued", r.Value!.Number)); Print(r.Value.PublicId); } else Flash(L.Error(r.Error, r.Args), true);
+        await LoadAsync();
+    }
+
+    private async Task CancelAsync()
+    {
+        var t = _cancelling!; _cancelling = null;
+        Flash(await Queue.CancelAsync(t.TicketId, Username), $"{t.Number} ✓");
+        await LoadAsync();
+    }
+
+    public override void Dispose()
+    {
+        _timer?.Dispose(); _timer = null;
+        base.Dispose();
+    }
+}

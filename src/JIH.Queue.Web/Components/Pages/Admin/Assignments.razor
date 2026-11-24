@@ -1,0 +1,156 @@
+@page "/admin/assignments"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inherits LivePageBase
+@inject AdminService Admin
+@inject QueueQueryService Query
+@inject IClock Clock
+
+<PageTitle>@L["assign.title"]</PageTitle>
+<Flash Message="@FlashMessage" IsError="@FlashIsError" Toast="true" />
+
+<div class="page-head">
+    <div>
+        <h1>@L["assign.title"]</h1>
+        <p class="small muted" style="margin:0">@L["assign.intro"]</p>
+    </div>
+</div>
+
+<section class="panel">
+    <div class="inline-form" style="margin-bottom:1rem">
+        <label class="field"><span>@L["common.date"]</span>
+            <input type="date" value="@_date.ToString("yyyy-MM-dd")" @onchange="DateChanged" />
+        </label>
+        <button class="btn btn-primary" @onclick="New" disabled="@(_date < Clock.Today)">@L["assign.add"]</button>
+        <span class="spacer"></span>
+        <label class="field"><span>@L["assign.copyFrom"]</span>
+            <input type="date" @bind="_copyFrom" @bind:format="yyyy-MM-dd" />
+        </label>
+        <button class="btn" @onclick="CopyAsync" disabled="@(_date < Clock.Today)">@L["assign.copy"]</button>
+    </div>
+
+    @if (_list.Count == 0)
+    {
+        <div class="empty">@L["assign.empty"]</div>
+    }
+    else
+    {
+        @foreach (var shift in Enum.GetValues<Shift>())
+        {
+            var items = _list.Where(a => a.Shift == shift).ToList();
+            if (items.Count == 0) continue;
+            <h2 style="margin-top:1rem">@L.Enum(shift)</h2>
+            <table class="data">
+                <thead><tr><th>@L["common.clinic"]</th><th class="num">@L["common.room"]</th><th>@L["doctors.name"]</th><th>@L["common.status"]</th><th class="num">@L["common.actions"]</th></tr></thead>
+                <tbody>
+                    @foreach (var a in items)
+                    {
+                        <tr>
+                            <td>@(L.IsArabic ? a.ClinicNameAr : a.ClinicNameEn)</td>
+                            <td class="num">@a.RoomNumber</td>
+                            <td>@(L.IsArabic ? a.DoctorNameAr : a.DoctorNameEn)</td>
+                            <td><StatusPill Value="@a.Status.ToString()" Text="@L.Enum(a.Status)" /></td>
+                            <td><div class="actions">
+                                @if (a.ServiceDate >= Clock.Today && a.CurrentTicketId is null)
+                                {
+                                    <button class="btn btn-sm" @onclick="() => Edit(a)">@L["common.edit"]</button>
+                                }
+                                @if (a.Status == AssignmentStatus.Scheduled)
+                                {
+                                    <button class="btn btn-sm btn-danger" @onclick="() => DeleteAsync(a.Id)">@L["common.delete"]</button>
+                                }
+                            </div></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+</section>
+
+@if (_edit is not null)
+{
+    <div class="modal-back" @onclick="() => _edit = null">
+        <div class="modal" @onclick:stopPropagation role="dialog" aria-modal="true">
+            <h2>@(_edit.Id == 0 ? L["assign.add"] : L["common.edit"]) – <span class="tnum">@_date.ToString("yyyy-MM-dd")</span></h2>
+            <label class="field"><span>@L["doctors.name"]</span>
+                <select @bind="_edit.DoctorId">
+                    <option value="0">—</option>
+                    @foreach (var d in _doctors) { <option value="@d.Id">@d.Name(L.IsArabic) – @(L.IsArabic ? d.SpecialtyAr : d.SpecialtyEn)</option> }
+                </select>
+            </label>
+            <label class="field"><span>@L["common.clinic"]</span>
+                <select value="@_edit.ClinicId" @onchange="ClinicChanged">
+                    <option value="0">—</option>
+                    @foreach (var c in _clinics) { <option value="@c.Id">@c.Code – @c.Name(L.IsArabic)</option> }
+                </select>
+            </label>
+            <label class="field"><span>@L["common.room"]</span>
+                <select @bind="_edit.RoomId">
+                    <option value="0">—</option>
+                    @foreach (var r in _rooms.Where(r => r.ClinicId == _edit.ClinicId && r.IsActive)) { <option value="@r.Id">@r.Number</option> }
+                </select>
+            </label>
+            <label class="field"><span>@L["doc.shift"]</span>
+                <select @bind="_edit.Shift">@foreach (var s in Enum.GetValues<Shift>()) { <option value="@s">@L.Enum(s)</option> }</select>
+            </label>
+            <div class="modal-actions">
+                <button class="btn" @onclick="() => _edit = null">@L["common.cancel"]</button>
+                <button class="btn btn-primary" @onclick="SaveAsync">@L["common.save"]</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private DateTime _date;
+    private DateTime _copyFrom;
+    private List<AssignmentView> _list = [];
+    private List<Doctor> _doctors = [];
+    private List<Clinic> _clinics = [];
+    private List<Room> _rooms = [];
+    private DoctorAssignment? _edit;
+
+    protected override async Task LoadAsync()
+    {
+        if (_date == default) { _date = Clock.Today; _copyFrom = Clock.Today.AddDays(-1); }
+        _list = await Query.GetAssignmentsAsync(_date);
+        _doctors = await Admin.GetDoctorsAsync(activeOnly: true);
+        _clinics = await Query.GetClinicsAsync();
+        _rooms = await Admin.GetRoomsAsync();
+    }
+
+    private async Task DateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var d)) { _date = d.Date; await LoadAsync(); }
+    }
+
+    private void ClinicChanged(ChangeEventArgs e)
+    {
+        _edit!.ClinicId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        _edit.RoomId = _rooms.FirstOrDefault(r => r.ClinicId == _edit.ClinicId && r.IsActive)?.Id ?? 0;
+    }
+
+    private void New() => _edit = new DoctorAssignment { ServiceDate = _date, Shift = Shift.Morning };
+    private void Edit(AssignmentView a) => _edit = new DoctorAssignment { Id = a.Id, DoctorId = a.DoctorId, ClinicId = a.ClinicId, RoomId = a.RoomId, Shift = a.Shift, ServiceDate = a.ServiceDate };
+
+    private async Task SaveAsync()
+    {
+        _edit!.ServiceDate = _date;
+        var r = await Admin.SaveAssignmentAsync(_edit, Username);
+        if (r.Ok) { _edit = null; Flash(L["common.saved"]); await LoadAsync(); } else Flash(L.Error(r.Error, r.Args), true);
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        Flash(await Admin.DeleteAssignmentAsync(id, Username), L["common.saved"]);
+        await LoadAsync();
+    }
+
+    private async Task CopyAsync()
+    {
+        var r = await Admin.CopyAssignmentsAsync(_copyFrom, _date, Username);
+        if (r.Ok) Flash(L.Format("assign.copied", r.Value)); else Flash(L.Error(r.Error, r.Args), true);
+        await LoadAsync();
+    }
+}

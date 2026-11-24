@@ -1,0 +1,46 @@
+@page "/print/{PublicId}"
+@attribute [Authorize(Roles = "Receptionist,Admin")]
+@layout ScreenLayout
+@inject Loc L
+@inject QueueQueryService Query
+@inject SettingsService Settings
+@inject NavigationManager Nav
+
+@* 80 mm thermal-printer ticket. Opens the print dialog automatically. *@
+<PageTitle>@_t?.Number</PageTitle>
+@if (_t is null)
+{
+    <p class="no-print">@L["ticket.notFound"]</p>
+}
+else
+{
+    <div class="print-ticket" data-autoprint>
+        <div class="p-hosp">@_hospital</div>
+        <hr />
+        <div class="small">@L["ticket.yourNumber"]</div>
+        <div class="p-num tnum">@_t.Number</div>
+        <div class="p-clinic">@(L.IsArabic ? _t.ClinicNameAr : _t.ClinicNameEn)</div>
+        <div class="p-meta">@L["ticket.ahead"]: <b>@_t.PeopleAhead</b> · <span class="tnum">@_t.IssuedAt.ToString("yyyy-MM-dd HH:mm")</span></div>
+        <hr />
+        <div class="qr" data-qr="@_trackUrl"></div>
+        <div class="p-meta">@L["ticket.scanToTrack"]</div>
+        <div class="p-meta">@L["ticket.printFooter"]</div>
+    </div>
+    <div class="no-print">
+        <button class="btn btn-primary" onclick="window.print()">@L["common.print"]</button>
+        <button class="btn" onclick="window.close()">@L["common.close"]</button>
+    </div>
+}
+@code {
+    [Parameter] public string PublicId { get; set; } = "";
+    private TicketStatusView? _t;
+    private string _hospital = "", _trackUrl = "";
+    protected override async Task OnInitializedAsync()
+    {
+        _t = await Query.GetTicketStatusAsync(PublicId);
+        var s = await Settings.GetAsync();
+        _hospital = s.HospitalName(L.IsArabic);
+        var baseUrl = string.IsNullOrWhiteSpace(s.PublicBaseUrl) ? Nav.BaseUri : s.PublicBaseUrl.TrimEnd('/') + "/";
+        _trackUrl = $"{baseUrl}ticket/{PublicId}";
+    }
+}

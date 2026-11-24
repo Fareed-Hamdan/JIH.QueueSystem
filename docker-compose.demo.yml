@@ -1,0 +1,15 @@
+# Quick demo WITHOUT Oracle (in-memory data, lost on restart). Includes sample tickets.
+#   docker compose -f docker-compose.demo.yml up --build
+#   open http://localhost:8080
+name: jih-queue-demo
+services:
+  app:
+    build: .
+    image: jih-queue-app:latest
+    environment:
+      Storage__Provider: InMemory
+      Seed__DemoTickets: "true"
+      Qr__Secret: demo-secret-change-me
+      App__PublicBaseUrl: http://localhost:8080
+    ports:
+      - "8080:8080"

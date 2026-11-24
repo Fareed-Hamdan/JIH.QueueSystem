@@ -1,0 +1,6 @@
+@inject Loc L
+<span class="pill pill-@Value">@Text</span>
+@code {
+    [Parameter, EditorRequired] public string Value { get; set; } = "";
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+}

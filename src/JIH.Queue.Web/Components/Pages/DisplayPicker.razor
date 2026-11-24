@@ -1,0 +1,17 @@
+@page "/display"
+@attribute [Authorize]
+@inject Loc L
+@inject AdminService Admin
+<PageTitle>@L["nav.displays"]</PageTitle>
+<div class="page-head"><h1>@L["disp.pick"]</h1></div>
+<div class="tiles">
+    @foreach (var d in _devices.Where(d => d.IsActive))
+    {
+        <a class="tile" href="/display/@d.Code" target="_blank"><h2 class="tnum">@d.Code</h2><p>@d.Name</p></a>
+    }
+</div>
+<p class="small muted" style="margin-top:1rem">@L["displays.howto"]</p>
+@code {
+    private List<DisplayDevice> _devices = [];
+    protected override async Task OnInitializedAsync() => _devices = await Admin.GetDisplaysAsync();
+}

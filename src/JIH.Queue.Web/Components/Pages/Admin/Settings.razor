@@ -1,0 +1,97 @@
+@page "/admin/settings"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inherits LivePageBase
+@inject SettingsService SettingsSvc
+
+<PageTitle>@L["settings.title"]</PageTitle>
+<Flash Message="@FlashMessage" IsError="@FlashIsError" Toast="true" />
+
+<div class="page-head">
+    <h1>@L["settings.title"]</h1>
+    <button class="btn btn-primary" @onclick="SaveAsync">@L["common.save"]</button>
+</div>
+
+@if (_v.Count > 0)
+{
+    <div class="grid grid-2">
+        <section class="panel">
+            <h2>@L["settings.hospital"]</h2>
+            @Text(SettingKeys.HospitalNameAr, "rtl")
+            @Text(SettingKeys.HospitalNameEn, "ltr")
+            @Text(SettingKeys.PublicBaseUrl, "ltr", L["settings.Public.BaseUrl.hint"])
+        </section>
+        <section class="panel">
+            <h2>@L["settings.queue"]</h2>
+            @Number(SettingKeys.NotifyAheadCount)
+            @Number(SettingKeys.SkipOffset)
+            @Number(SettingKeys.MaxSkips)
+            @Number(SettingKeys.QrRotationSeconds)
+        </section>
+        <section class="panel">
+            <h2>@L["settings.notifications"]</h2>
+            <label class="field"><span>@L["settings." + SettingKeys.NotificationChannel]</span>
+                <select @bind="_v[SettingKeys.NotificationChannel]">
+                    @foreach (var c in Enum.GetValues<NotificationChannel>()) { <option value="@c">@L.Enum(c)</option> }
+                </select>
+            </label>
+            <p class="small muted">@L["settings.twilioNote"]</p>
+        </section>
+        <section class="panel">
+            <h2>@L["settings.display"]</h2>
+            <label class="field"><span>@L["settings." + SettingKeys.AudioMode]</span>
+                <select @bind="_v[SettingKeys.AudioMode]">
+                    <option value="Clips">@L["settings.audio.Clips"]</option>
+                    <option value="BrowserTts">@L["settings.audio.BrowserTts"]</option>
+                </select>
+            </label>
+            @Bool(SettingKeys.AnnounceEnglish)
+            @Number(SettingKeys.DisplayNextCount)
+        </section>
+        <section class="panel">
+            <h2>@L["settings.reset"]</h2>
+            @Bool(SettingKeys.AutoResetEnabled)
+            <label class="field"><span>@L["settings." + SettingKeys.ResetTime]</span>
+                <input type="text" @bind="_v[SettingKeys.ResetTime]" dir="ltr" placeholder="23:59" />
+            </label>
+        </section>
+    </div>
+}
+
+@code {
+    private Dictionary<string, string> _v = [];
+
+    protected override async Task LoadAsync() => _v = await SettingsSvc.GetRawAsync();
+
+    private RenderFragment Text(string key, string dir, string? hint = null) => __builder =>
+    {
+        <label class="field"><span>@L["settings." + key]</span>
+            <input type="text" dir="@dir" @bind="_v[key]" />
+            @if (hint is not null) { <span class="hint">@hint</span> }
+        </label>
+    };
+
+    private RenderFragment Number(string key) => __builder =>
+    {
+        <label class="field"><span>@L["settings." + key]</span>
+            <input type="number" @bind="_v[key]" />
+        </label>
+    };
+
+    private RenderFragment Bool(string key) => __builder =>
+    {
+        <label class="check">
+            <input type="checkbox" checked="@(_v[key] == "true")" @onchange="e => SetBool(key, e)" />
+            <span>@L["settings." + key]</span>
+        </label>
+    };
+
+    private void SetBool(string key, ChangeEventArgs e) => _v[key] = e.Value is true ? "true" : "false";
+
+    private async Task SaveAsync()
+    {
+        var r = await SettingsSvc.SaveAsync(_v, Username);
+        Flash(r, L["common.saved"]);
+        if (r.Ok) await LoadAsync();
+    }
+}

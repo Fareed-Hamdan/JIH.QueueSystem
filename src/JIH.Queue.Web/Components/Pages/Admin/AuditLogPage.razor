@@ -1,0 +1,69 @@
+@page "/admin/audit"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inherits LivePageBase
+@inject AdminService Admin
+@inject IClock Clock
+
+<PageTitle>@L["audit.title"]</PageTitle>
+<div class="page-head">
+    <div>
+        <h1>@L["audit.title"]</h1>
+        <p class="small muted" style="margin:0">@L["audit.note"]</p>
+    </div>
+</div>
+
+<section class="panel">
+    <div class="inline-form" style="margin-bottom:1rem">
+        <label class="field"><span>@L["common.from"]</span><input type="date" @bind="_from" @bind:format="yyyy-MM-dd" /></label>
+        <label class="field"><span>@L["common.to"]</span><input type="date" @bind="_to" @bind:format="yyyy-MM-dd" /></label>
+        <label class="field"><span>@L["audit.action"]</span>
+            <select @bind="_action">
+                <option value="">@L["audit.anyAction"]</option>
+                @foreach (var a in Actions) { <option value="@a">@a</option> }
+            </select>
+        </label>
+        <label class="field"><span>@L["audit.user"]</span><input type="text" @bind="_user" dir="ltr" style="width:160px" /></label>
+        <button class="btn btn-primary" @onclick="Search">@L["common.search"]</button>
+    </div>
+    <div class="table-wrap">
+        <table class="data">
+            <thead><tr><th>@L["audit.time"]</th><th>@L["audit.user"]</th><th>@L["audit.action"]</th><th>@L["audit.entity"]</th><th>@L["audit.details"]</th></tr></thead>
+            <tbody>
+                @foreach (var r in _rows)
+                {
+                    <tr>
+                        <td class="tnum">@r.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td dir="ltr" style="text-align:start">@r.Username</td>
+                        <td>@r.Action</td>
+                        <td dir="ltr" style="text-align:start">@r.EntityType @(r.EntityId is null ? "" : "#" + r.EntityId)</td>
+                        <td dir="auto">@r.Details</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="row" style="margin-top:1rem">
+        <button class="btn btn-sm" disabled="@(_page == 0)" @onclick="() => Go(-1)">@L["audit.prev"]</button>
+        <span class="small muted">@L.Format("audit.page", _page + 1, Math.Max(1, (_total + PageSize - 1) / PageSize))</span>
+        <button class="btn btn-sm" disabled="@((_page + 1) * PageSize >= _total)" @onclick="() => Go(1)">@L["audit.next"]</button>
+    </div>
+</section>
+
+@code {
+    private const int PageSize = 50;
+    private static readonly string[] Actions = typeof(AuditActions).GetFields().Select(f => (string)f.GetValue(null)!).ToArray();
+    private DateTime _from, _to;
+    private string _action = "", _user = "";
+    private int _page, _total;
+    private List<AuditLog> _rows = [];
+
+    protected override async Task LoadAsync()
+    {
+        if (_from == default) { _from = _to = Clock.Today; }
+        (_rows, _total) = await Admin.GetAuditAsync(_from, _to, _action, _user.Trim(), _page, PageSize);
+    }
+
+    private async Task Search() { _page = 0; await LoadAsync(); }
+    private async Task Go(int delta) { _page = Math.Max(0, _page + delta); await LoadAsync(); }
+}

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!--
+      UseOracle=true (default): Oracle storage is compiled in (needs NuGet access for Oracle.EntityFrameworkCore).
+      Build with -p:UseOracle=false to produce an in-memory-only build (demos / offline development).
+    -->
+    <UseOracle Condition="'$(UseOracle)' == ''">true</UseOracle>
+    <DefineConstants Condition="'$(UseOracle)' == 'true'">$(DefineConstants);ORACLE</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\JIH.Queue.Core\JIH.Queue.Core.csproj" />
+    <ProjectReference Include="..\JIH.Queue.Data.Oracle\JIH.Queue.Data.Oracle.csproj" Condition="'$(UseOracle)' == 'true'" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,44 @@
+@page "/login"
+@layout ScreenLayout
+@inject Loc L
+@inject SettingsService Settings
+
+<PageTitle>@L["login.title"]</PageTitle>
+<div class="login-wrap">
+    <section class="login-side">
+        <div>
+            <BrandMark Class="big-mark" />
+            <h1>@_hospital</h1>
+            <p style="font-size:1.15rem;opacity:.85">@L["app.title"]</p>
+        </div>
+        <p class="small" style="opacity:.7">@L["login.patientHint"]</p>
+    </section>
+    <section class="login-form">
+        <form method="post" action="/account/login" data-enhance="false">
+            <div class="row" style="justify-content:space-between;margin-bottom:1.5rem">
+                <h2 style="margin:0">@L["login.title"]</h2>
+                <LangSwitch />
+            </div>
+            @if (Failed == 1)
+            {
+                <div class="alert alert-error" role="alert">@L["login.failed"]</div>
+            }
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+            <label class="field"><span>@L["login.username"]</span>
+                <input type="text" name="username" autocomplete="username" dir="ltr" required autofocus />
+            </label>
+            <label class="field"><span>@L["login.password"]</span>
+                <input type="password" name="password" autocomplete="current-password" dir="ltr" required />
+            </label>
+            <button class="btn btn-primary btn-block" type="submit">@L["login.submit"]</button>
+            <p class="small muted" style="margin-top:1.5rem">@L["common.dummyData"]</p>
+        </form>
+    </section>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+    [SupplyParameterFromQuery] public int? Failed { get; set; }
+    private string _hospital = "";
+    protected override async Task OnInitializedAsync() => _hospital = (await Settings.GetAsync()).HospitalName(L.IsArabic);
+}

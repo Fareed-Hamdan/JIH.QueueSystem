@@ -1,0 +1,168 @@
+@page "/display/{Code}"
+@layout ScreenLayout
+@rendermode InteractiveServer
+@inherits LivePageBase
+@inject QueueQueryService Query
+@inject AdminService Admin
+@inject SettingsService Settings
+@inject IClock Clock
+@inject IJSRuntime JS
+
+@* Waiting-hall TV screen. Public (no login), shows ticket NUMBERS only – never names. *@
+<PageTitle>@_hospital</PageTitle>
+
+@if (_loaded && _device is null)
+{
+    <div class="qr-screen"><h1>@L["disp.notFound"]</h1></div>
+}
+else
+{
+    <div class="screen">
+        <header class="screen-head">
+            <BrandMark />
+            <div class="screen-title">@_hospitalAr<small>@_hospitalEn · @L["app.title"]</small></div>
+            <div class="screen-clock">@Clock.Now.ToString("HH:mm")</div>
+        </header>
+        <div class="board">
+            <div class="board-head">
+                <div>@Bi("common.clinic")</div>
+                <div>@Bi("disp.nowServing")</div>
+                <div>@Bi("disp.room")</div>
+                <div>@Bi("disp.next")</div>
+            </div>
+            @foreach (var c in _clinics)
+            {
+                <div class="board-row @(_flashClinic == c.ClinicId ? "flash" : "")">
+                    <div class="cname">@c.NameAr<small>@c.NameEn</small></div>
+                    @if (c.Status == ClinicStatus.Closed)
+                    {
+                        <div class="dim">@Loc.Get("disp.closed", true) · @Loc.Get("disp.closed", false)</div><div></div><div></div>
+                    }
+                    else
+                    {
+                        @* A clinic with several doctors serves several numbers at once – one line per room. *@
+                        var serving = c.Serving.Take(3).ToList();
+                        <div class="now @(serving.Count > 1 ? "multi" : "")">
+                            @if (serving.Count == 0) { <span>—</span> }
+                            @foreach (var sv in serving) { <span class="tnum">@sv.Number</span> }
+                        </div>
+                        <div class="room @(serving.Count > 1 ? "multi" : "")">
+                            @foreach (var sv in serving) { <span>@sv.RoomNumber</span> }
+                        </div>
+                        <div class="next">
+                            @if (c.Status == ClinicStatus.Paused)
+                            {
+                                <span class="dim">@Loc.Get("disp.paused", true)</span>
+                            }
+                            @foreach (var n in c.Next) { <span class="tnum">@n</span> }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+        <footer class="screen-foot">
+            <span>@Loc.Get("disp.footer", true)</span>
+            <span>@Loc.Get("disp.footer", false)</span>
+        </footer>
+    </div>
+
+    @if (_callout is not null)
+    {
+        <div class="callout" role="alert" aria-live="assertive">
+            <div class="callout-card">
+                <div class="c-label">@Loc.Get("disp.nowServing", true) · Now serving</div>
+                <div class="c-number tnum">@_callout.TicketNumber</div>
+                <div class="c-room">@Loc.Get("disp.pleaseGo", true) @Loc.Get("common.room", true) @_callout.RoomNumber · Room @_callout.RoomNumber</div>
+                <div class="c-clinic">@_calloutClinic</div>
+            </div>
+        </div>
+    }
+
+    @if (!_soundOn && RendererInfo.IsInteractive)
+    {
+        <button class="sound-gate" @onclick="EnableSoundAsync">
+            <span><b>@Loc.Get("disp.enableSound", true)</b><b>@Loc.Get("disp.enableSound", false)</b>
+                <span class="small" style="opacity:.7">@Loc.Get("disp.enableSoundHint", true) – @Loc.Get("disp.enableSoundHint", false)</span></span>
+        </button>
+    }
+}
+
+@code {
+    [Parameter] public string Code { get; set; } = "";
+    private DisplayDevice? _device;
+    private List<DisplayClinic> _clinics = [];
+    private IReadOnlyList<int> _clinicIds = [];
+    private string _hospital = "", _hospitalAr = "", _hospitalEn = "", _calloutClinic = "";
+    private bool _loaded, _soundOn;
+    private Announcement? _callout;
+    private int _flashClinic;
+    private PeriodicTimer? _clock;
+    private CancellationTokenSource? _calloutCts;
+
+    // The hall screen is always bilingual (Arabic first) regardless of the browser language.
+    private MarkupString Bi(string key) => new($"{Loc.Get(key, true)} <span style=\"opacity:.7\">{Loc.Get(key, false)}</span>");
+
+    protected override async Task LoadAsync()
+    {
+        var s = await Settings.GetAsync();
+        _hospitalAr = s.HospitalNameAr; _hospitalEn = s.HospitalNameEn; _hospital = s.HospitalName(L.IsArabic);
+        _device ??= await Admin.GetDisplayByCodeAsync(Code.ToUpperInvariant());
+        if (_device is not null)
+        {
+            _clinicIds = _device.ClinicIdList();
+            _clinics = await Query.GetDisplayAsync(_clinicIds, s.DisplayNextCount);
+        }
+        _loaded = true;
+    }
+
+    protected override bool IsRelevant(int clinicId) => _clinicIds.Count == 0 || _clinicIds.Contains(clinicId);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        var s = await Settings.GetAsync();
+        await JS.InvokeVoidAsync("jihAnnouncer.configure", s.AudioMode, s.AnnounceEnglish);
+        _clock = new PeriodicTimer(TimeSpan.FromSeconds(20));
+        _ = ClockLoop();
+    }
+
+    private async Task ClockLoop()
+    {
+        try { while (_clock is not null && await _clock.WaitForNextTickAsync()) await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task EnableSoundAsync()
+    {
+        await JS.InvokeVoidAsync("jihAnnouncer.unlock");
+        _soundOn = true;
+    }
+
+    protected override async Task OnAnnouncementAsync(Announcement a)
+    {
+        if (!IsRelevant(a.ClinicId)) return;
+        var c = _clinics.FirstOrDefault(x => x.ClinicId == a.ClinicId);
+        _callout = a;
+        _calloutClinic = c is null ? "" : $"{c.NameAr} · {c.NameEn}";
+        _flashClinic = a.ClinicId;
+        StateHasChanged();
+        try { await JS.InvokeVoidAsync("jihAnnouncer.announce", a.TicketNumber, a.RoomNumber); } catch (JSDisconnectedException) { }
+
+        _calloutCts?.Cancel();
+        var cts = _calloutCts = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(8), cts.Token);
+            _callout = null; _flashClinic = 0;
+            StateHasChanged();
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    public override void Dispose()
+    {
+        _clock?.Dispose(); _clock = null;
+        _calloutCts?.Cancel();
+        base.Dispose();
+    }
+}

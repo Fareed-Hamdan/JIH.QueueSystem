@@ -1,0 +1,5 @@
+@inject Loc L
+@inject NavigationManager Nav
+<a class="@Class" href="@($"/culture/set?culture={(L.IsArabic ? "en" : "ar")}&redirectUri={Uri.EscapeDataString("/" + Nav.ToBaseRelativePath(Nav.Uri))}")" data-enhance-nav="false"
+   lang="@(L.IsArabic ? "en" : "ar")">@L["lang.switch"]</a>
+@code { [Parameter] public string? Class { get; set; } }

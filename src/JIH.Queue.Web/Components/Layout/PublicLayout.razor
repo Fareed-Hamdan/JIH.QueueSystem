@@ -1,0 +1,17 @@
+@inherits LayoutComponentBase
+@inject Loc L
+@inject SettingsService Settings
+<div class="public">
+    <header class="public-head">
+        <BrandMark />
+        <strong>@_hospital</strong>
+        <LangSwitch Class="lang" />
+    </header>
+    <main class="public-main">@Body</main>
+    <footer class="public-foot">@L["common.dummyData"]</footer>
+</div>
+<div id="blazor-error-ui" data-nosnippet>@L["err.unexpected"] <a href="." class="reload">↻</a><span class="dismiss">✕</span></div>
+@code {
+    private string _hospital = "";
+    protected override async Task OnInitializedAsync() => _hospital = (await Settings.GetAsync()).HospitalName(L.IsArabic);
+}

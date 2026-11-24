@@ -1,0 +1,26 @@
+@inject Loc L
+<!DOCTYPE html>
+<html lang="@L.Lang" dir="@L.Dir">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0E3B33" />
+    <base href="/" />
+    <title>@L["app.title"]</title>
+    <link rel="icon" type="image/svg+xml" href="img/mark.svg" />
+    <ResourcePreloader />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <ImportMap />
+    <HeadOutlet />
+</head>
+
+<body>
+    <Routes />
+    <ReconnectModal />
+    <script src="lib/qrcode/qrcode.js"></script>
+    <script src="@Assets["js/app.js"]"></script>
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+
+</html>

@@ -1,0 +1,229 @@
+@page "/doctor"
+@attribute [Authorize(Roles = "Doctor,Nurse,Admin")]
+@rendermode InteractiveServer
+@inherits LivePageBase
+@inject QueueService Queue
+@inject QueueQueryService Query
+@inject IClock Clock
+
+<PageTitle>@L["doc.title"]</PageTitle>
+<Flash Message="@FlashMessage" IsError="@FlashIsError" Toast="true" />
+
+@if (_panel is null)
+{
+    <div class="page-head"><h1>@L["doc.chooseAssignment"]</h1></div>
+    @if (_assignments.Count == 0)
+    {
+        <div class="panel empty">@L["doc.noAssignments"]</div>
+    }
+    else
+    {
+        <div class="assignment-pick">
+            @foreach (var a in _assignments)
+            {
+                <button @onclick="() => Select(a.Id)">
+                    <b>@(L.IsArabic ? a.ClinicNameAr : a.ClinicNameEn) · @L["common.room"] @a.RoomNumber</b>
+                    <span>@(L.IsArabic ? a.DoctorNameAr : a.DoctorNameEn)</span><br />
+                    <span class="small muted">@L.Enum(a.Shift) · </span><StatusPill Value="@a.Status.ToString()" Text="@L.Enum(a.Status)" />
+                </button>
+            }
+        </div>
+    }
+}
+else
+{
+    var a = _panel.Assignment;
+    <div class="page-head">
+        <div>
+            <h1>@(L.IsArabic ? a.ClinicNameAr : a.ClinicNameEn) · @L["common.room"] <span class="tnum">@a.RoomNumber</span></h1>
+            <div class="row small muted">
+                <span>@(L.IsArabic ? a.DoctorNameAr : a.DoctorNameEn)</span>
+                <span>@L["doc.shift"]: @L.Enum(a.Shift)</span>
+                <StatusPill Value="@a.Status.ToString()" Text="@L.Enum(a.Status)" />
+                @if (_panel.ClinicStatus != ClinicStatus.Open)
+                {
+                    <StatusPill Value="@_panel.ClinicStatus.ToString()" Text="@($"{L["common.clinic"]}: {L.Enum(_panel.ClinicStatus)}")" />
+                }
+            </div>
+        </div>
+        <div class="row">
+            @if (a.Status is AssignmentStatus.Scheduled or AssignmentStatus.Paused)
+            {
+                <button class="btn btn-primary" @onclick="() => SetStatus(AssignmentStatus.Active)">@(a.Status == AssignmentStatus.Paused ? L["doc.resume"] : L["doc.start"])</button>
+            }
+            @if (a.Status == AssignmentStatus.Active)
+            {
+                <button class="btn" @onclick="() => SetStatus(AssignmentStatus.Paused)" disabled="@(_panel.Current is not null)">@L["doc.pause"]</button>
+            }
+            @if (a.Status is AssignmentStatus.Active or AssignmentStatus.Paused)
+            {
+                <button class="btn btn-danger" @onclick="() => SetStatus(AssignmentStatus.Finished)" disabled="@(_panel.Current is not null)">@L["doc.finish"]</button>
+            }
+            @if (_assignments.Count > 1)
+            {
+                <button class="btn btn-ghost" @onclick="() => { _selectedId = null; _panel = null; }">@L["doc.switch"]</button>
+            }
+        </div>
+    </div>
+
+    <div class="grid grid-doctor">
+        <section class="stack">
+            @if (_panel.Current is { } cur)
+            {
+                <div class="current-card">
+                    <div class="row" style="justify-content:space-between">
+                        <span class="muted small">@L["doc.current"]</span>
+                        <span class="row">
+                            @if (cur.IsPriority) { <span class="pill pill-priority">@L["rec.priorityBadge"]</span> }
+                            @if (cur.SkipCount > 0) { <span class="pill">@L.Format("rec.skipped", cur.SkipCount)</span> }
+                        </span>
+                    </div>
+                    <div class="current-number tnum">@cur.Number</div>
+                    <div class="current-name">@cur.PatientName</div>
+                    <div class="small muted">@L["doc.waited"]: @WaitedMinutes(cur) @L["common.minutes"] · <span class="tnum">@cur.PhoneLocal</span></div>
+                    <div class="complaint"><b class="small">@L["doc.complaint"]:</b><br />@cur.Complaint</div>
+                    <div class="doctor-actions">
+                        <button class="btn btn-primary span-2" @onclick="EndVisit" disabled="@_busy">@L["doc.endVisit"]</button>
+                        <button class="btn" @onclick="Recall" disabled="@_busy">@L["doc.recall"]</button>
+                        <button class="btn btn-danger" @onclick="Skip" disabled="@_busy" title="@L["doc.skipHint"]">@L["doc.skip"]</button>
+                        <button class="btn span-2" @onclick="() => _transferOpen = true" disabled="@_busy">@L["doc.transfer"]</button>
+                    </div>
+                    <p class="small muted" style="margin:.6rem 0 0">@L["doc.skipHint"]</p>
+                </div>
+            }
+            else
+            {
+                <div class="current-card empty-state">
+                    <p>@L["doc.noCurrent"]</p>
+                    <button class="btn btn-brass btn-xl" @onclick="CallNext"
+                            disabled="@(_busy || a.Status != AssignmentStatus.Active || _panel.Waiting.Count == 0)">@L["doc.callNext"]</button>
+                    @if (a.Status != AssignmentStatus.Active)
+                    {
+                        <p class="small" style="margin-top:.8rem">@L["err.assignmentNotActive"]</p>
+                    }
+                </div>
+            }
+            <div class="metrics">
+                <div class="metric"><b>@_panel.ServedByMe</b><span>@L["doc.servedByMe"]</span></div>
+                <div class="metric"><b>@(_panel.MyAvgServiceMinutes?.ToString("0.#") ?? "—")</b><span>@L["doc.avgService"] (@L["common.minutes"])</span></div>
+                <div class="metric"><b>@_panel.ClinicNoShows</b><span>@L["doc.clinicNoShows"]</span></div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head"><h2>@L["doc.queue"] <span class="muted small">(@_panel.Waiting.Count)</span></h2></div>
+            @if (_panel.Waiting.Count == 0)
+            {
+                <div class="empty">@L["doc.queueEmpty"]</div>
+            }
+            else
+            {
+                <ol class="queue-list">
+                    @foreach (var w in _panel.Waiting)
+                    {
+                        <li>
+                            <span class="qn tnum">@w.Number</span>
+                            <span class="qname">@w.PatientName</span>
+                            @if (w.IsPriority) { <span class="pill pill-priority">@L["rec.priorityBadge"]</span> }
+                            @if (w.SkipCount > 0) { <span class="pill">@L.Format("rec.skipped", w.SkipCount)</span> }
+                            <span class="small muted tnum">@w.IssuedAt.ToString("HH:mm")</span>
+                        </li>
+                    }
+                </ol>
+            }
+        </section>
+    </div>
+}
+
+@if (_transferOpen && _panel?.Current is not null)
+{
+    <div class="modal-back" @onclick="() => _transferOpen = false">
+        <div class="modal" @onclick:stopPropagation role="dialog" aria-modal="true">
+            <h2>@L["doc.transfer"] – <span class="tnum">@_panel.Current.Number</span></h2>
+            <label class="field"><span>@L["common.clinic"]</span>
+                <select @bind="_transferTo">
+                    <option value="0">@L["join.chooseClinic"]</option>
+                    @foreach (var c in _clinics.Where(c => c.Id != _panel.Assignment.ClinicId && c.Status != ClinicStatus.Closed))
+                    { <option value="@c.Id">@c.Code – @c.Name(L.IsArabic)</option> }
+                </select>
+            </label>
+            <label class="check"><input type="checkbox" @bind="_transferUrgent" /><span>@L["doc.transferUrgent"]</span></label>
+            <div class="modal-actions">
+                <button class="btn" @onclick="() => _transferOpen = false">@L["common.cancel"]</button>
+                <button class="btn btn-primary" disabled="@(_transferTo == 0)" @onclick="Transfer">@L["doc.transferDo"]</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<AssignmentView> _assignments = [];
+    private List<Clinic> _clinics = [];
+    private DoctorPanel? _panel;
+    private int? _selectedId;
+    private bool _busy, _transferOpen, _transferUrgent;
+    private int _transferTo;
+
+    protected override async Task LoadAsync()
+    {
+        // Doctors see their own assignments; nurses and admins can operate any room today.
+        var all = await Query.GetAssignmentsAsync(Clock.Today, IsInRole("Doctor") && !IsInRole("Admin") ? DoctorId ?? -1 : null);
+        _assignments = all.Where(x => x.Status != AssignmentStatus.Finished || x.Id == _selectedId).ToList();
+        _clinics = await Query.GetClinicsAsync();
+        if (_selectedId is null && IsInRole("Doctor") && _assignments.Count == 1) _selectedId = _assignments[0].Id;
+        if (_selectedId is null && IsInRole("Doctor")) _selectedId = _assignments.FirstOrDefault(x => x.Status == AssignmentStatus.Active)?.Id;
+        _panel = _selectedId is int id ? await Query.GetDoctorPanelAsync(id) : null;
+    }
+
+    protected override bool IsRelevant(int clinicId) => _panel is null || _panel.Assignment.ClinicId == clinicId;
+
+    private async Task Select(int id) { _selectedId = id; await LoadAsync(); }
+
+    private int WaitedMinutes(QueueRow r) => (int)Math.Max(0, (Clock.Now - r.IssuedAt).TotalMinutes);
+
+    private async Task Run(Func<Task> action)
+    {
+        if (_busy) return;
+        _busy = true;
+        try { await action(); await LoadAsync(); }
+        finally { _busy = false; }
+    }
+
+    private Task CallNext() => Run(async () =>
+    {
+        var r = await Queue.CallNextAsync(_selectedId!.Value, Username);
+        if (r.Ok) Flash(L.Format("doc.called", r.Value!.Number, r.Value.RoomNumber)); else Flash(L.Error(r.Error, r.Args), true);
+    });
+
+    private Task Recall() => Run(async () =>
+    {
+        var n = _panel?.Current?.Number;
+        Flash(await Queue.RecallAsync(_selectedId!.Value, Username), L.Format("doc.recalled", n));
+    });
+
+    private Task Skip() => Run(async () =>
+    {
+        var n = _panel?.Current?.Number;
+        var r = await Queue.SkipAsync(_selectedId!.Value, Username);
+        if (r.Ok) Flash(L.Format(r.Value ? "doc.noShow" : "doc.skipped", n)); else Flash(L.Error(r.Error, r.Args), true);
+    });
+
+    private Task EndVisit() => Run(async () =>
+    {
+        var n = _panel?.Current?.Number;
+        Flash(await Queue.EndVisitAsync(_selectedId!.Value, Username), L.Format("doc.ended", n));
+    });
+
+    private Task Transfer() => Run(async () =>
+    {
+        _transferOpen = false;
+        var r = await Queue.TransferAsync(_selectedId!.Value, _transferTo, _transferUrgent, Username);
+        _transferTo = 0; _transferUrgent = false;
+        if (r.Ok) Flash(L.Format("doc.transferred", r.Value!.Number)); else Flash(L.Error(r.Error, r.Args), true);
+    });
+
+    private Task SetStatus(AssignmentStatus s) => Run(async () =>
+    {
+        Flash(await Queue.SetAssignmentStatusAsync(_selectedId!.Value, s, Username), L.Enum(s));
+    });
+}

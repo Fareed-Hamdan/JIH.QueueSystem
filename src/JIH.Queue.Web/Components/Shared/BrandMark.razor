@@ -1,0 +1,10 @@
+@* Generic placeholder mark (eight-point star + cross). Replace with the hospital's official logo file. *@
+<svg class="@Class" viewBox="0 0 64 64" aria-hidden="true">
+    <rect width="64" height="64" rx="12" fill="#0E3B33" stroke="rgba(255,255,255,.25)" />
+    <g fill="none" stroke="#C8A04A" stroke-width="3">
+        <rect x="17" y="17" width="30" height="30" />
+        <rect x="17" y="17" width="30" height="30" transform="rotate(45 32 32)" />
+    </g>
+    <path d="M32 24v16M24 32h16" stroke="#fff" stroke-width="4" stroke-linecap="round" />
+</svg>
+@code { [Parameter] public string Class { get; set; } = "brand-mark"; }

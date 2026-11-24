@@ -1,0 +1,64 @@
+@page "/admin/doctors"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inherits LivePageBase
+@inject AdminService Admin
+
+<PageTitle>@L["doctors.title"]</PageTitle>
+<Flash Message="@FlashMessage" IsError="@FlashIsError" Toast="true" />
+
+<div class="page-head">
+    <h1>@L["doctors.title"]</h1>
+    <button class="btn btn-primary" @onclick="() => Edit(new Doctor { IsActive = true })">@L["doctors.add"]</button>
+</div>
+
+<section class="panel">
+    <table class="data">
+        <thead><tr><th>@L["clinics.nameAr"]</th><th>@L["clinics.nameEn"]</th><th>@L["doctors.specialty"]</th><th>@L["common.status"]</th><th class="num">@L["common.actions"]</th></tr></thead>
+        <tbody>
+            @foreach (var d in _doctors)
+            {
+                <tr>
+                    <td>@d.NameAr</td>
+                    <td>@d.NameEn</td>
+                    <td>@(L.IsArabic ? d.SpecialtyAr : d.SpecialtyEn)</td>
+                    <td><StatusPill Value="@(d.IsActive ? "Active" : "Closed")" Text="@(d.IsActive ? L["common.active"] : L["common.inactive"])" /></td>
+                    <td><div class="actions"><button class="btn btn-sm" @onclick="() => Edit(d)">@L["common.edit"]</button></div></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+@if (_edit is not null)
+{
+    <div class="modal-back" @onclick="() => _edit = null">
+        <div class="modal" @onclick:stopPropagation role="dialog" aria-modal="true">
+            <h2>@(_edit.Id == 0 ? L["doctors.add"] : L["common.edit"])</h2>
+            <label class="field"><span>@L["clinics.nameAr"]</span><input type="text" @bind="_edit.NameAr" dir="rtl" /></label>
+            <label class="field"><span>@L["clinics.nameEn"]</span><input type="text" @bind="_edit.NameEn" dir="ltr" /></label>
+            <label class="field"><span>@L["doctors.specialtyAr"]</span><input type="text" @bind="_edit.SpecialtyAr" dir="rtl" /></label>
+            <label class="field"><span>@L["doctors.specialtyEn"]</span><input type="text" @bind="_edit.SpecialtyEn" dir="ltr" /></label>
+            <label class="check"><input type="checkbox" @bind="_edit.IsActive" /><span>@L["common.active"]</span></label>
+            <div class="modal-actions">
+                <button class="btn" @onclick="() => _edit = null">@L["common.cancel"]</button>
+                <button class="btn btn-primary" @onclick="SaveAsync">@L["common.save"]</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Doctor> _doctors = [];
+    private Doctor? _edit;
+
+    protected override async Task LoadAsync() => _doctors = await Admin.GetDoctorsAsync();
+
+    private void Edit(Doctor d) => _edit = new Doctor { Id = d.Id, NameAr = d.NameAr, NameEn = d.NameEn, SpecialtyAr = d.SpecialtyAr, SpecialtyEn = d.SpecialtyEn, IsActive = d.IsActive };
+
+    private async Task SaveAsync()
+    {
+        var r = await Admin.SaveDoctorAsync(_edit!, Username);
+        if (r.Ok) { _edit = null; Flash(L["common.saved"]); await LoadAsync(); } else Flash(L.Error(r.Error, r.Args), true);
+    }
+}

@@ -1,0 +1,74 @@
+@page "/admin/reports"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inherits LivePageBase
+@inject ReportService ReportsSvc
+@inject IClock Clock
+
+<PageTitle>@L["rep.title"]</PageTitle>
+
+<div class="page-head">
+    <h1>@L["rep.title"]</h1>
+</div>
+
+<section class="panel" style="margin-bottom:1.25rem">
+    <h2>@L["rep.range"]</h2>
+    <div class="inline-form">
+        <label class="field"><span>@L["common.from"]</span><input type="date" @bind="_from" @bind:format="yyyy-MM-dd" /></label>
+        <label class="field"><span>@L["common.to"]</span><input type="date" @bind="_to" @bind:format="yyyy-MM-dd" /></label>
+        <button class="btn btn-primary" @onclick="ShowAsync">@L["rep.show"]</button>
+        <a class="btn" href="@($"/admin/export/report.csv?from={_from:yyyy-MM-dd}&to={_to:yyyy-MM-dd}&lang={L.Lang}")" data-enhance-nav="false" download>@L["rep.exportCsv"]</a>
+        <button class="btn" onclick="window.print()">@L["common.print"]</button>
+    </div>
+</section>
+
+<ReportView Summary="_summary" Extras="_extras" />
+
+<section class="panel" style="margin-top:1.25rem">
+    <h2>@L["rep.daily"]</h2>
+    <div class="table-wrap">
+        <table class="data">
+            <thead><tr>
+                <th>@L["common.date"]</th><th class="num">@L["adm.total"]</th><th class="num">@L["adm.completed"]</th><th class="num">@L["adm.noShows"]</th>
+                <th class="num">@L["adm.avgWait"]</th><th class="num">@L["adm.avgService"]</th><th>@L["rep.trigger"]</th><th>@L["rep.generatedAt"]</th><th></th>
+            </tr></thead>
+            <tbody>
+                @foreach (var r in _daily)
+                {
+                    <tr>
+                        <td class="tnum">@r.ServiceDate.ToString("yyyy-MM-dd ddd")</td>
+                        <td class="num">@r.TotalTickets</td><td class="num">@r.Completed</td><td class="num">@r.NoShows</td>
+                        <td class="num">@(r.AvgWaitMinutes?.ToString("0.#") ?? "—")</td><td class="num">@(r.AvgServiceMinutes?.ToString("0.#") ?? "—")</td>
+                        <td>@L.Enum(r.Trigger)</td>
+                        <td class="tnum">@r.GeneratedAt.ToString("yyyy-MM-dd HH:mm") · @r.GeneratedBy</td>
+                        <td><div class="actions">
+                            <a class="btn btn-sm" href="/admin/reports/@r.Id">@L["rep.open"]</a>
+                            <a class="btn btn-sm" href="/admin/export/daily/@(r.Id).csv?lang=@L.Lang" data-enhance-nav="false" download>CSV</a>
+                        </div></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    private DateTime _from, _to;
+    private ReportSummary? _summary;
+    private List<DailyReport> _daily = [];
+    private IReadOnlyList<(string, string)> _extras = [];
+
+    protected override async Task LoadAsync()
+    {
+        if (_from == default) { _to = Clock.Today; _from = Clock.Today.AddDays(-13); }
+        await ShowAsync();
+        _daily = await ReportsSvc.GetDailyReportsAsync(90);
+    }
+
+    private async Task ShowAsync()
+    {
+        if (_to < _from) (_from, _to) = (_to, _from);
+        _summary = await ReportsSvc.RangeAsync(_from, _to);
+        _extras = [(L["rep.selfService"], _summary.SelfService.ToString()), (L["rep.priority"], _summary.Priority.ToString())];
+    }
+}

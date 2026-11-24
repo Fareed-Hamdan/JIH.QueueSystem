@@ -1,0 +1,27 @@
+@page "/"
+@attribute [Authorize]
+@inject Loc L
+<PageTitle>@L["app.title"]</PageTitle>
+<AuthorizeView>
+    <div class="page-head">
+        <div>
+            <h1>@L.Format("home.welcome", context.User.FindFirst("display_name")?.Value)</h1>
+            <p class="muted" style="margin:0">@L["home.choose"]</p>
+        </div>
+    </div>
+    <div class="tiles">
+        @if (context.User.IsInRole("Receptionist") || context.User.IsInRole("Admin"))
+        {
+            <a class="tile" href="/reception"><h2>@L["nav.reception"]</h2><p>@L["home.reception.desc"]</p></a>
+        }
+        @if (context.User.IsInRole("Doctor") || context.User.IsInRole("Nurse") || context.User.IsInRole("Admin"))
+        {
+            <a class="tile" href="/doctor"><h2>@L["nav.doctor"]</h2><p>@L["home.doctor.desc"]</p></a>
+        }
+        <a class="tile" href="/display"><h2>@L["nav.displays"]</h2><p>@L["home.display.desc"]</p></a>
+        @if (context.User.IsInRole("Admin"))
+        {
+            <a class="tile" href="/admin"><h2>@L["nav.admin"]</h2><p>@L["home.admin.desc"]</p></a>
+        }
+    </div>
+</AuthorizeView>

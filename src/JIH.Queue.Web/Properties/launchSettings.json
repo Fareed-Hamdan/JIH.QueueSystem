@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "InMemory (no Oracle)": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "http://0.0.0.0:5080",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+    "Oracle (local)": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "http://0.0.0.0:5080",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Production",
+        "Storage__Provider": "Oracle",
+        "ConnectionStrings__Oracle": "User Id=JIH_QUEUE;Password=ChangeMe_123;Data Source=localhost:1521/FREEPDB1"
+      }
+    }
+  }
+}

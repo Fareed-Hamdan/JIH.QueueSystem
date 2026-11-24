@@ -1,0 +1,90 @@
+@page "/admin/displays"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inherits LivePageBase
+@inject AdminService Admin
+@inject QueueQueryService Query
+
+<PageTitle>@L["displays.title"]</PageTitle>
+<Flash Message="@FlashMessage" IsError="@FlashIsError" Toast="true" />
+
+<div class="page-head">
+    <h1>@L["displays.title"]</h1>
+    <button class="btn btn-primary" @onclick="() => Edit(new DisplayDevice { IsActive = true })">@L["displays.add"]</button>
+</div>
+<p class="small muted">@L["displays.howto"]</p>
+
+<section class="panel">
+    <table class="data">
+        <thead><tr><th>@L["displays.code"]</th><th>@L["displays.name"]</th><th>@L["displays.clinics"]</th><th>@L["displays.lastSeen"]</th><th class="num">@L["common.actions"]</th></tr></thead>
+        <tbody>
+            @foreach (var d in _devices)
+            {
+                <tr style="@(d.IsActive ? "" : "opacity:.5")">
+                    <td><b class="tnum">@d.Code</b></td>
+                    <td>@d.Name</td>
+                    <td>@(d.ClinicIdList().Count == 0 ? L["displays.allClinics"] : string.Join("، ", d.ClinicIdList().Select(id => _clinics.FirstOrDefault(c => c.Id == id)?.Code)))</td>
+                    <td class="tnum">@d.LastSeenAt?.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td><div class="actions">
+                        <a class="btn btn-sm" href="/display/@d.Code" target="_blank">@L["displays.open"]</a>
+                        <button class="btn btn-sm" @onclick="() => Edit(d)">@L["common.edit"]</button>
+                    </div></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+@if (_edit is not null)
+{
+    <div class="modal-back" @onclick="() => _edit = null">
+        <div class="modal" @onclick:stopPropagation role="dialog" aria-modal="true">
+            <h2>@(_edit.Id == 0 ? L["displays.add"] : L["common.edit"])</h2>
+            <label class="field"><span>@L["displays.code"]</span><input type="text" @bind="_edit.Code" dir="ltr" placeholder="HALL-1" /></label>
+            <label class="field"><span>@L["displays.name"]</span><input type="text" @bind="_edit.Name" /></label>
+            <fieldset style="border:1px solid var(--line);border-radius:6px;padding:.6rem .9rem;margin:0 0 .9rem">
+                <legend class="small">@L["displays.clinics"] <span class="muted">(@L["displays.allClinics"] = @L["common.none"])</span></legend>
+                @foreach (var c in _clinics)
+                {
+                    <label class="check" style="margin:.2rem 0">
+                        <input type="checkbox" checked="@_selected.Contains(c.Id)" @onchange="e => Toggle(c.Id, (bool)(e.Value ?? false))" />
+                        <span>@c.Code – @c.Name(L.IsArabic)</span>
+                    </label>
+                }
+            </fieldset>
+            <label class="check"><input type="checkbox" @bind="_edit.IsActive" /><span>@L["common.active"]</span></label>
+            <div class="modal-actions">
+                <button class="btn" @onclick="() => _edit = null">@L["common.cancel"]</button>
+                <button class="btn btn-primary" @onclick="SaveAsync">@L["common.save"]</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<DisplayDevice> _devices = [];
+    private List<Clinic> _clinics = [];
+    private DisplayDevice? _edit;
+    private HashSet<int> _selected = [];
+
+    protected override async Task LoadAsync()
+    {
+        _devices = await Admin.GetDisplaysAsync();
+        _clinics = await Query.GetClinicsAsync();
+    }
+
+    private void Edit(DisplayDevice d)
+    {
+        _edit = new DisplayDevice { Id = d.Id, Code = d.Code, Name = d.Name, ClinicIds = d.ClinicIds, IsActive = d.IsActive };
+        _selected = d.ClinicIdList().ToHashSet();
+    }
+
+    private void Toggle(int id, bool on) { if (on) _selected.Add(id); else _selected.Remove(id); }
+
+    private async Task SaveAsync()
+    {
+        _edit!.ClinicIds = string.Join(",", _selected.OrderBy(x => x));
+        var r = await Admin.SaveDisplayAsync(_edit, Username);
+        if (r.Ok) { _edit = null; Flash(L["common.saved"]); await LoadAsync(); } else Flash(L.Error(r.Error, r.Args), true);
+    }
+}

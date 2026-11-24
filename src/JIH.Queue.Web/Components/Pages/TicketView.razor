@@ -1,0 +1,79 @@
+@page "/ticket/{PublicId}"
+@layout PublicLayout
+@rendermode InteractiveServer
+@inherits LivePageBase
+@inject QueueQueryService Query
+
+@* Patient's live ticket page. Shows only this ticket – no other patient data. *@
+<PageTitle>@(_t?.Number ?? L["ticket.yourNumber"])</PageTitle>
+
+@if (_loaded && _t is null)
+{
+    <div class="ticket-state bad">@L["ticket.notFound"]</div>
+}
+else if (_t is not null)
+{
+    <div class="ticket-card">
+        <div class="top">
+            <div class="label">@L["ticket.yourNumber"]</div>
+            <div class="big tnum">@_t.Number</div>
+            <div class="clinic">@(L.IsArabic ? _t.ClinicNameAr : _t.ClinicNameEn)</div>
+        </div>
+        @if (_t.Status == TicketStatus.Waiting)
+        {
+            <div class="perf"></div>
+            <div class="facts">
+                <div><b>@_t.PeopleAhead</b><span class="small muted">@L["ticket.ahead"]</span></div>
+                <div><b>@(_t.EstimatedMinutes ?? 0)</b><span class="small muted">@L["ticket.estimate"] (@L["common.minutes"])</span></div>
+            </div>
+        }
+    </div>
+
+    @switch (_t.Status)
+    {
+        case TicketStatus.Called:
+            <div class="ticket-state called" role="alert">@L.Format("ticket.called", _t.RoomNumber)</div>
+            break;
+        case TicketStatus.Waiting when _t.PeopleAhead == 0:
+            <div class="ticket-state next">@L["ticket.next"]</div>
+            break;
+        case TicketStatus.Completed:
+            <div class="ticket-state info">@L["ticket.completed"]</div>
+            break;
+        case TicketStatus.NoShow:
+            <div class="ticket-state bad">@L["ticket.noShow"]</div>
+            break;
+        case TicketStatus.Transferred:
+            <div class="ticket-state info">
+                @L["ticket.transferred"]
+                @if (_t.TransferredToPublicId is not null)
+                {
+                    <div style="margin-top:.6rem"><a class="btn btn-primary" href="/ticket/@_t.TransferredToPublicId">@L["ticket.openNew"]</a></div>
+                }
+            </div>
+            break;
+        case TicketStatus.Cancelled:
+            <div class="ticket-state bad">@L["ticket.cancelled"]</div>
+            break;
+        case TicketStatus.NotSeen:
+            <div class="ticket-state bad">@L["ticket.notSeen"]</div>
+            break;
+    }
+
+    <p class="small muted" style="text-align:center;margin-top:1rem">
+        @L["ticket.issuedAt"]: <span class="tnum">@_t.IssuedAt.ToString("HH:mm")</span><br />
+        @L["ticket.live"] @L["ticket.keep"]
+    </p>
+}
+
+@code {
+    [Parameter] public string PublicId { get; set; } = "";
+    private TicketStatusView? _t;
+    private bool _loaded;
+
+    protected override async Task LoadAsync()
+    {
+        _t = await Query.GetTicketStatusAsync(PublicId);
+        _loaded = true;
+    }
+}

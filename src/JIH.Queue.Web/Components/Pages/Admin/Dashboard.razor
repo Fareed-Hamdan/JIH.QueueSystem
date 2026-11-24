@@ -1,0 +1,146 @@
+@page "/admin"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inherits LivePageBase
+@inject ReportService Reports
+@inject QueueQueryService Query
+@inject AdminService Admin
+@inject EndOfDayService EndOfDay
+@inject SettingsService Settings
+@inject IClock Clock
+
+<PageTitle>@L["adm.title"]</PageTitle>
+<Flash Message="@FlashMessage" IsError="@FlashIsError" Toast="true" />
+
+<div class="page-head">
+    <div>
+        <h1>@L["adm.today"]</h1>
+        <span class="muted tnum">@Clock.Now.ToString("yyyy-MM-dd HH:mm")</span>
+    </div>
+</div>
+
+<ReportView Summary="_live" ShowLive="true" />
+
+<div class="grid grid-2" style="margin-top:1.25rem">
+    <section class="panel">
+        <div class="panel-head"><h2>@L["adm.clinicStatus"]</h2><a class="btn btn-sm" href="/admin/clinics">@L["nav.clinics"]</a></div>
+        <table class="data">
+            <thead><tr><th>@L["common.clinic"]</th><th class="num">@L["adm.waiting"]</th><th>@L["rec.serving"]</th><th>@L["adm.setStatus"]</th></tr></thead>
+            <tbody>
+                @foreach (var c in _display)
+                {
+                    <tr>
+                        <td><b class="tnum">@c.Code</b> @(L.IsArabic ? c.NameAr : c.NameEn)</td>
+                        <td class="num">@c.WaitingCount</td>
+                        <td class="tnum">@string.Join(", ", c.Serving.Select(s => s.Number))</td>
+                        <td>
+                            <select value="@c.Status" @onchange="e => SetStatusAsync(c.ClinicId, e.Value?.ToString())" aria-label="@L["adm.setStatus"]">
+                                @foreach (var st in Enum.GetValues<ClinicStatus>()) { <option value="@st">@L.Enum(st)</option> }
+                            </select>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p class="small muted" style="margin-top:.8rem">@L["clinics.statusHelp"]</p>
+    </section>
+
+    <section class="stack">
+        <div class="panel">
+            <div class="panel-head"><h2>@L["adm.doctorsToday"]</h2><a class="btn btn-sm" href="/admin/assignments">@L["nav.assignments"]</a></div>
+            <table class="data">
+                <thead><tr><th>@L["doctors.name"]</th><th>@L["common.clinic"]</th><th class="num">@L["common.room"]</th><th>@L["doc.shift"]</th><th>@L["common.status"]</th></tr></thead>
+                <tbody>
+                    @foreach (var a in _assignments)
+                    {
+                        <tr>
+                            <td>@(L.IsArabic ? a.DoctorNameAr : a.DoctorNameEn)</td>
+                            <td>@(L.IsArabic ? a.ClinicNameAr : a.ClinicNameEn)</td>
+                            <td class="num">@a.RoomNumber</td>
+                            <td>@L.Enum(a.Shift)</td>
+                            <td><StatusPill Value="@a.Status.ToString()" Text="@L.Enum(a.Status)" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="panel">
+            <h2>@L["adm.eod"]</h2>
+            <p class="small">@L.Format("adm.eodText", _resetTime)</p>
+            <button class="btn btn-danger" @onclick="() => _confirmEod = true">@L["adm.eodRun"]</button>
+        </div>
+
+        <div class="panel">
+            <div class="panel-head"><h2>@L["adm.lastReports"]</h2><a class="btn btn-sm" href="/admin/reports">@L["nav.reports"]</a></div>
+            <table class="data">
+                <thead><tr><th>@L["common.date"]</th><th class="num">@L["adm.total"]</th><th class="num">@L["adm.avgWait"]</th><th>@L["rep.trigger"]</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var r in _reports)
+                    {
+                        <tr>
+                            <td class="tnum">@r.ServiceDate.ToString("yyyy-MM-dd")</td>
+                            <td class="num">@r.TotalTickets</td>
+                            <td class="num">@(r.AvgWaitMinutes?.ToString("0.#") ?? "—")</td>
+                            <td>@L.Enum(r.Trigger)</td>
+                            <td><a class="btn btn-sm" href="/admin/reports/@r.Id">@L["rep.open"]</a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+@if (_confirmEod)
+{
+    <div class="modal-back" @onclick="() => _confirmEod = false">
+        <div class="modal" @onclick:stopPropagation role="alertdialog" aria-modal="true">
+            <h2>@L["adm.eodRun"]</h2>
+            <p>@L["adm.eodConfirm"]</p>
+            <div class="modal-actions">
+                <button class="btn" @onclick="() => _confirmEod = false">@L["common.cancel"]</button>
+                <button class="btn btn-danger" @onclick="RunEodAsync" disabled="@_busy">@L["adm.eodRun"]</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private ReportSummary? _live;
+    private List<DisplayClinic> _display = [];
+    private List<AssignmentView> _assignments = [];
+    private List<DailyReport> _reports = [];
+    private string _resetTime = "";
+    private bool _confirmEod, _busy;
+
+    protected override async Task LoadAsync()
+    {
+        _live = await Reports.LiveTodayAsync();
+        _display = await Query.GetDisplayAsync([], 0);
+        _assignments = await Query.GetAssignmentsAsync(Clock.Today);
+        _reports = await Reports.GetDailyReportsAsync(6);
+        _resetTime = (await Settings.GetAsync()).ResetTime;
+    }
+
+    private async Task SetStatusAsync(int clinicId, string? value)
+    {
+        if (!Enum.TryParse<ClinicStatus>(value, out var st)) return;
+        Flash(await Admin.SetClinicStatusAsync(clinicId, st, Username), L["common.saved"]);
+        await LoadAsync();
+    }
+
+    private async Task RunEodAsync()
+    {
+        _busy = true;
+        try
+        {
+            var ids = await EndOfDay.RunAsync(ResetTrigger.Manual, Username);
+            _confirmEod = false;
+            Flash(L["adm.eodDone"]);
+            await LoadAsync();
+        }
+        catch (Exception) { Flash(L["err.unexpected"], true); }
+        finally { _busy = false; }
+    }
+}
